@@ -1,0 +1,1 @@
+var e={"claude-code":`Claude Code`,codex:`Codex`,opencode:`OpenCode`,cursor:`Cursor`,"claude-desktop":`Claude Desktop`,"pandora-ui":`Pandora UI`,terminal:`Terminal`};function t(t){let n=t.trim();if(!n)return``;if(n.startsWith(`mcp:`)){let t=n.slice(4);return`${e[t]??t} (MCP)`}return e[n]??n}export{t};

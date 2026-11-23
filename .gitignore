@@ -1,0 +1,7 @@
+/dist/
+/pandora
+*.test
+*.out
+.DS_Store
+.maestri/
+.claude/settings.local.json

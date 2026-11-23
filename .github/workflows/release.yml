@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+      version:
+        description: Explicit version without the v prefix (overrides bump)
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test ./...
+      - name: Create tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ github.ref }}
+          BUMP: ${{ inputs.bump }}
+          EXPLICIT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Releases can only be created from main (current ref: $REF)."
+            exit 1
+          fi
+
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          latest=${latest:-v0.0.0}
+
+          if [ -n "$EXPLICIT_VERSION" ]; then
+            if ! printf '%s' "$EXPLICIT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "invalid version: $EXPLICIT_VERSION (expected e.g. 1.4.0 or 1.4.0-rc.1)"
+              exit 1
+            fi
+            next=$EXPLICIT_VERSION
+          else
+            base=${latest#v}
+            major=${base%%.*}
+            rest=${base#*.}
+            minor=${rest%%.*}
+            patch=${rest#*.}
+            patch=${patch%%-*}
+            case "$BUMP" in
+              major)
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+              minor)
+                minor=$((minor + 1))
+                patch=0
+                ;;
+              patch)
+                patch=$((patch + 1))
+                ;;
+              *)
+                echo "invalid bump: $BUMP"
+                exit 1
+                ;;
+            esac
+            next="$major.$minor.$patch"
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$next" >/dev/null; then
+            echo "tag v$next already exists"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$next" -m "v$next"
+          git push origin "v$next"
+      - name: Release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

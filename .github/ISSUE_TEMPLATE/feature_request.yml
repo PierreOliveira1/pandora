@@ -1,0 +1,52 @@
+name: Feature request
+description: Suggest a new capability or a change in behavior.
+title: "[feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first. A concrete use case helps more than a general idea.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should Pandora do instead?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: What have you tried, and what else could work?
+    validations:
+      required: false
+  - type: dropdown
+    id: client
+    attributes:
+      label: AI client
+      options:
+        - Claude Code
+        - Codex
+        - OpenCode
+        - Cursor
+        - Claude Desktop
+        - More than one
+        - Not specific to a client
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, examples or screenshots. Remove secrets before pasting.
+    validations:
+      required: false
