@@ -60,3 +60,73 @@ func TestPolicyRulesAreValidatedAndKeptWithoutDuplicates(t *testing.T) {
 		t.Errorf("stored Deny = %v, want %v", stored.Deny, want)
 	}
 }
+
+func TestApplyPolicyBuildsTheNextPolicyFromACopy(t *testing.T) {
+	readOnly := true
+	tests := []struct {
+		name   string
+		before config.Account
+		input  registry.PolicyInput
+		want   config.Account
+	}{
+		{
+			name:   "clear resets the policy and keeps the account data",
+			before: config.Account{Description: "Demo", ReadOnly: true, Allow: []string{"get-*"}, Deny: []string{"send-*"}},
+			input:  registry.PolicyInput{Clear: true},
+			want:   config.Account{Description: "Demo"},
+		},
+		{
+			name:   "readonly sets the flag",
+			before: config.Account{Allow: []string{"get-*"}},
+			input:  registry.PolicyInput{ReadOnly: &readOnly},
+			want:   config.Account{ReadOnly: true, Allow: []string{"get-*"}},
+		},
+		{
+			name:   "rules are added, removed and sorted",
+			before: config.Account{Allow: []string{"get-*", "find-*"}, Deny: []string{"send-*"}},
+			input:  registry.PolicyInput{Allow: []string{"list-*"}, Deny: []string{"delete-*"}, RemoveRule: []string{"find-*"}},
+			want:   config.Account{Allow: []string{"get-*", "list-*"}, Deny: []string{"delete-*", "send-*"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			before := test.before
+			originalAllow := append([]string(nil), before.Allow...)
+			originalDeny := append([]string(nil), before.Deny...)
+			got := registry.ApplyPolicy(before, test.input)
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("ApplyPolicy() = %+v, want %+v", got, test.want)
+			}
+			if !reflect.DeepEqual(before.Allow, originalAllow) || !reflect.DeepEqual(before.Deny, originalDeny) {
+				t.Errorf("ApplyPolicy() changed the input account: %+v", before)
+			}
+		})
+	}
+}
+
+func TestLoosensDetectsOnlyChangesThatMayAllowATool(t *testing.T) {
+	tests := []struct {
+		name   string
+		before config.Account
+		after  config.Account
+		want   bool
+	}{
+		{name: "removing a deny loosens", before: config.Account{Deny: []string{"send-*"}}, after: config.Account{}, want: true},
+		{name: "making a read-only account writable loosens", before: config.Account{ReadOnly: true}, after: config.Account{}, want: true},
+		{name: "clearing the allow loosens", before: config.Account{Allow: []string{"get-*"}}, after: config.Account{}, want: true},
+		{name: "adding an allow to an existing list loosens", before: config.Account{Allow: []string{"get-*"}}, after: config.Account{Allow: []string{"get-*", "list-*"}}, want: true},
+		{name: "replacing the allow loosens", before: config.Account{Allow: []string{"get-*"}}, after: config.Account{Allow: []string{"list-*"}}, want: true},
+		{name: "adding a deny tightens", before: config.Account{}, after: config.Account{Deny: []string{"send-*"}}, want: false},
+		{name: "marking read-only tightens", before: config.Account{}, after: config.Account{ReadOnly: true}, want: false},
+		{name: "creating the first allow tightens", before: config.Account{}, after: config.Account{Allow: []string{"get-*"}}, want: false},
+		{name: "removing an allow from a nonempty list tightens", before: config.Account{Allow: []string{"get-*", "list-*"}}, after: config.Account{Allow: []string{"get-*"}}, want: false},
+		{name: "keeping the same policy does not loosen", before: config.Account{ReadOnly: true, Allow: []string{"get-*"}, Deny: []string{"send-*"}}, after: config.Account{ReadOnly: true, Allow: []string{"get-*"}, Deny: []string{"send-*"}}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := registry.Loosens(test.before, test.after); got != test.want {
+				t.Errorf("Loosens() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}

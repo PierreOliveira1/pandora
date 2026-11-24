@@ -68,6 +68,57 @@ The tool name ends with ` (read-only)` or ` (destructive)` when the source decla
 
 Policies apply in the CLI, the MCP server and the web UI, because all three go through the same policy check. A blocked call does not reach the service.
 
+### Only you can loosen a rule
+
+A change that loosens the rules of an account asks for confirmation in an interactive terminal. Loosening means:
+
+- removing a deny pattern;
+- `--writable` on a read-only account;
+- widening or clearing the allow list;
+- `--clear` when it drops one of these.
+
+AI clients run commands without an interactive terminal, so `pandora policy` refuses the change and the AI has to ask you. Tightening the rules needs no confirmation. The rules panel of the web UI is yours and changes the rules directly.
+
+When a call is blocked, the error tells the AI that you set the rule and that it must tell you instead of changing it. The skill and the MCP instructions say the same.
+
+### Keep your AI from changing the rules
+
+Your AI runs commands as you. Pandora refuses to loosen a rule without your terminal, but an AI could still take other paths:
+
+- edit Pandora's config file;
+- remove the account and add it again;
+- on a command or HTTP service, add the same tool under another name.
+
+To close these paths, use the permission rules of the AI client. The client enforces them, not the model, so a rule holds even when the AI decides to work around it.
+
+In Claude Code, add deny rules to `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Bash(pandora policy *)",
+      "Bash(pandora remove *)",
+      "Bash(pandora ui *)",
+      "Read(~/.config/pandora/**)",
+      "Edit(~/.claude/settings.json)"
+    ]
+  }
+}
+```
+
+| Rule | What it stops |
+| --- | --- |
+| `Bash(pandora policy *)` | Reading or changing the rules. |
+| `Bash(pandora remove *)` | Removing an account and adding it again without its rules. |
+| `Bash(pandora ui *)` | Starting the web UI to change the rules there. |
+| `Read(~/.config/pandora/**)` | Reading or editing Pandora's config. A read deny also blocks edits. Use the directory that `pandora paths` prints if you changed it. |
+| `Edit(~/.claude/settings.json)` | Editing these deny rules. |
+
+A deny rule wins over any allow rule. If the AI should not add or remove tools of command and HTTP services either, add `"Bash(pandora tool *)"`. Your AI then cannot connect new tools for you.
+
+Bash rules match the command as written: the full path to the binary or `sh -c "pandora policy ..."` does not match them. Pandora's own terminal check still stops a loosening change made that way. For a boundary that does not depend on the command text, see Claude Code's [permissions](https://code.claude.com/docs/en/permissions) and [sandboxing](https://code.claude.com/docs/en/sandboxing). Other AI clients have their own permission or sandbox settings: block the same commands and Pandora's config directory there.
+
 ## Call log
 
 Pandora records every tool call it makes. See the latest calls:

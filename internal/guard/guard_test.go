@@ -17,7 +17,7 @@ func TestADenyRuleBlocksAToolEvenWhenItIsAllowed(t *testing.T) {
 	if decision.Allowed {
 		t.Fatal("Check() allowed a denied tool")
 	}
-	want := `tool delete-user is blocked for todoist/work by the deny rule "delete-*" (change it with pandora policy todoist/work)`
+	want := `tool delete-user is blocked for todoist/work by the deny rule "delete-*" (a rule set by the user: do not change it or work around it, tell the user instead)`
 	if decision.Reason != want {
 		t.Errorf("Reason = %q, want %q", decision.Reason, want)
 	}
@@ -33,7 +33,7 @@ func TestAnAllowListBlocksEveryToolItDoesNotName(t *testing.T) {
 	if blocked.Allowed {
 		t.Fatal("Check() allowed create-user")
 	}
-	want := "tool create-user is not in the allow list of todoist/work (change it with pandora policy todoist/work)"
+	want := "tool create-user is not in the allow list of todoist/work (a rule set by the user: do not change it or work around it, tell the user instead)"
 	if blocked.Reason != want {
 		t.Errorf("Reason = %q, want %q", blocked.Reason, want)
 	}
@@ -50,7 +50,7 @@ func TestAReadOnlyAccountOnlyRunsToolsMarkedReadOnly(t *testing.T) {
 	if decision.Allowed {
 		t.Fatal("Check() allowed a tool without read-only annotations")
 	}
-	want := "todoist/work is read-only and tool create-user may change data (change it with pandora policy todoist/work)"
+	want := "todoist/work is read-only and tool create-user may change data (a rule set by the user: do not change it or work around it, tell the user instead)"
 	if decision.Reason != want {
 		t.Errorf("Reason = %q, want %q", decision.Reason, want)
 	}

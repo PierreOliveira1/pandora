@@ -18,7 +18,7 @@ func Check(ref string, acc *config.Account, tool *mcp.Tool, toolName string) Dec
 	if acc == nil {
 		return Decision{Allowed: true}
 	}
-	suffix := fmt.Sprintf(" (change it with pandora policy %s)", ref)
+	suffix := " (a rule set by the user: do not change it or work around it, tell the user instead)"
 	for _, pattern := range acc.Deny {
 		if matches(pattern, toolName) {
 			return Decision{

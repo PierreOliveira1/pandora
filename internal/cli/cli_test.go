@@ -406,6 +406,90 @@ func TestUninstallingRemovesTheSkillAndThePermission(t *testing.T) {
 	}
 }
 
+func TestALooseningPolicyChangeWithoutATerminalIsRefusedAndTheRuleStays(t *testing.T) {
+	newPolicyCLIHome(t)
+	addPolicyCommandAccount(t, "demo", "personal")
+	runPolicyPandora(t, "", "policy", "demo/personal", "--deny", "x")
+
+	code, _, stderr := executePolicyPandora(t, "", "policy", "demo/personal", "--remove", "x")
+	if code == 0 {
+		t.Fatal("removing a deny succeeded without a terminal")
+	}
+	if !strings.Contains(stderr, "this change loosens the rules of demo/personal") {
+		t.Fatalf("stderr = %q, want the loosening error", stderr)
+	}
+	if !strings.Contains(stderr, "ask the user to run this command in their own terminal") {
+		t.Fatalf("stderr = %q, want the terminal instruction", stderr)
+	}
+
+	stdout, _ := runPolicyPandora(t, "", "policy", "demo/personal", "--json")
+	var policy struct {
+		ReadOnly bool     `json:"readonly"`
+		Allow    []string `json:"allow"`
+		Deny     []string `json:"deny"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &policy); err != nil {
+		t.Fatalf("decoding policy: %v", err)
+	}
+	if !slices.Contains(policy.Deny, "x") {
+		t.Fatalf("deny = %v, want x still present", policy.Deny)
+	}
+}
+
+func TestTighteningPolicyRulesWorksWithoutATerminal(t *testing.T) {
+	newPolicyCLIHome(t)
+	addPolicyCommandAccount(t, "demo", "personal")
+	runPolicyPandora(t, "", "policy", "demo/personal", "--deny", "x")
+	runPolicyPandora(t, "", "policy", "demo/personal", "--readonly")
+
+	stdout, _ := runPolicyPandora(t, "", "policy", "demo/personal", "--json")
+	var policy struct {
+		ReadOnly bool     `json:"readonly"`
+		Allow    []string `json:"allow"`
+		Deny     []string `json:"deny"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &policy); err != nil {
+		t.Fatalf("decoding policy: %v", err)
+	}
+	if !policy.ReadOnly {
+		t.Fatal("readonly = false, want true")
+	}
+	if !slices.Contains(policy.Deny, "x") {
+		t.Fatalf("deny = %v, want x", policy.Deny)
+	}
+}
+
+func newPolicyCLIHome(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("PANDORA_HOME", home)
+	t.Setenv("PANDORA_SECRETS", "file")
+	t.Setenv("PANDORA_NO_DAEMON", "1")
+	t.Setenv("HOME", filepath.Join(home, "home"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+}
+
+func executePolicyPandora(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	code := cli.Execute(context.Background(), args, strings.NewReader(stdin), &stdout, &stderr)
+	return code, stdout.String(), stderr.String()
+}
+
+func runPolicyPandora(t *testing.T, stdin string, args ...string) (string, string) {
+	t.Helper()
+	code, stdout, stderr := executePolicyPandora(t, stdin, args...)
+	if code != 0 {
+		t.Fatalf("%v exited with %d: stdout=%s stderr=%s", args, code, stdout, stderr)
+	}
+	return stdout, stderr
+}
+
+func addPolicyCommandAccount(t *testing.T, service, account string) {
+	t.Helper()
+	runPolicyPandora(t, "", "add", service, "--as", account, "--kind", "command")
+}
+
 func installedCLIHomes(t *testing.T) (string, string) {
 	t.Helper()
 	home := t.TempDir()

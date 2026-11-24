@@ -60,6 +60,24 @@ func newPolicy(d deps) *cobra.Command {
 			}
 			change := input.ReadOnly != nil || clear || len(allow) > 0 || len(deny) > 0 || len(remove) > 0
 			if change {
+				current, err := d.registry.GetPolicy(ref)
+				if err != nil {
+					return err
+				}
+				next := registry.ApplyPolicy(current, input)
+				if registry.Loosens(current, next) {
+					if !isTerminal(d.stdin) {
+						return fmt.Errorf("this change loosens the rules of %s, so only the user can make it: ask the user to run this command in their own terminal", ref.String())
+					}
+					fmt.Fprintf(d.stderr, "This loosens the rules of %s. Continue? [y/N] ", ref.String())
+					confirmed, err := readConfirmation(d.stdin)
+					if err != nil {
+						return err
+					}
+					if !confirmed {
+						return errors.New("canceled: the rules were not changed")
+					}
+				}
 				value, err := d.registry.SetPolicy(ref, input)
 				if err != nil {
 					return err

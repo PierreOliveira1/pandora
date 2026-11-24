@@ -37,23 +37,48 @@ func (r *Registry) SetPolicy(ref Ref, in PolicyInput) (config.Account, error) {
 		if !ok {
 			return fmt.Errorf("unknown account %q", resolved.String())
 		}
-		if in.Clear {
-			account.ReadOnly = false
-			account.Allow = nil
-			account.Deny = nil
-		}
-		if in.ReadOnly != nil {
-			account.ReadOnly = *in.ReadOnly
-		}
-		account.Allow = applyRules(account.Allow, in.Allow, in.RemoveRule)
-		account.Deny = applyRules(account.Deny, in.Deny, in.RemoveRule)
-		result = cloneAccount(*account)
+		next := ApplyPolicy(*account, in)
+		*account = next
+		result = cloneAccount(next)
 		return nil
 	})
 	if err != nil {
 		return config.Account{}, err
 	}
 	return result, nil
+}
+
+func ApplyPolicy(account config.Account, in PolicyInput) config.Account {
+	next := cloneAccount(account)
+	if in.Clear {
+		next.ReadOnly = false
+		next.Allow = nil
+		next.Deny = nil
+	}
+	if in.ReadOnly != nil {
+		next.ReadOnly = *in.ReadOnly
+	}
+	next.Allow = applyRules(next.Allow, in.Allow, in.RemoveRule)
+	next.Deny = applyRules(next.Deny, in.Deny, in.RemoveRule)
+	return next
+}
+
+func Loosens(before, after config.Account) bool {
+	if before.ReadOnly && !after.ReadOnly {
+		return true
+	}
+	if hasRuleOutside(before.Deny, after.Deny) {
+		return true
+	}
+	if len(before.Allow) > 0 {
+		if len(after.Allow) == 0 {
+			return true
+		}
+		if hasRuleOutside(after.Allow, before.Allow) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Registry) GetPolicy(ref Ref) (config.Account, error) {
@@ -84,6 +109,19 @@ func validatePolicyInput(in PolicyInput) error {
 		}
 	}
 	return nil
+}
+
+func hasRuleOutside(rules, allowed []string) bool {
+	set := make(map[string]struct{}, len(allowed))
+	for _, rule := range allowed {
+		set[rule] = struct{}{}
+	}
+	for _, rule := range rules {
+		if _, ok := set[rule]; !ok {
+			return true
+		}
+	}
+	return false
 }
 
 func applyRules(existing, add, remove []string) []string {

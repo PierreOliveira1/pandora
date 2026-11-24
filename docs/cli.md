@@ -644,6 +644,8 @@ pandora policy <service/account> [flags]
 pandora policy todoist/work --readonly --allow 'get-*'
 ```
 
+A change that loosens the rules asks for confirmation in an interactive terminal and is refused without one. Loosening means removing a deny pattern, `--writable` on a read-only account, or widening or clearing the allow list. An AI cannot loosen the rules on its own. See [Safety](safety.md#only-you-can-loosen-a-rule).
+
 ## pandora remove
 
 Remove an account or a service.

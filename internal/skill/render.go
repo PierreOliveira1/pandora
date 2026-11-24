@@ -47,6 +47,7 @@ func renderSkillMD(description string, services []Service) []byte {
 	b.WriteString("```\n\n")
 	b.WriteString("5. Add `--json` to any command for machine-readable output, and pipe it to `jq` when you only need part of it.\n\n")
 	b.WriteString("If a command says an account needs login, ask the user to run `pandora auth <service>/<account>` (it opens the browser). Never try to log in yourself.\n")
+	b.WriteString("The user can set rules on an account: read-only, allow and deny. If a call is blocked, stop and tell the user which rule blocked it. Never change the rules with `pandora policy`, never edit Pandora's files and never work around a rule, for example with another account or a new tool.\n")
 	b.WriteString("Tools marked read-only only read data. Confirm with the user before running tools that create, change or delete data, spend money or send messages.\n\n")
 	b.WriteString("## Connect a new service or account\n\nWhen the user asks to connect a service, an API or another account, read `connect.md` in this skill before you run anything.\n\n")
 	if hasWebhooks(services) {

@@ -128,10 +128,10 @@ This example needs no external service. It creates a test service with two accou
    # Email sent to team@example.com (not really)
 
    pandora call demo/personal send-email '{"to": "team@example.com"}'
-   # error: tool send-email is blocked for demo/personal by the deny rule "send-email" (change it with pandora policy demo/personal)
+   # error: tool send-email is blocked for demo/personal by the deny rule "send-email" (a rule set by the user: do not change it or work around it, tell the user instead)
    ```
 
-   The blocked call never reaches the tool.
+   The blocked call never reaches the tool. Your AI cannot lift the rule either: loosening a rule needs your confirmation in your own terminal. To stop the AI from touching the rules at all, add deny rules to your AI client, as shown in [Keep your AI from changing the rules](docs/safety.md#keep-your-ai-from-changing-the-rules).
 
 4. See both attempts with `pandora log`, or on the Activity screen of `pandora ui`:
 
