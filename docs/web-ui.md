@@ -40,6 +40,8 @@ The first screen lists every service and its accounts, with the connection statu
 
 Add account asks for the same information as `pandora add`, including OAuth client ID, scopes, headers, environment variables and secret environment variables. Secrets are saved to the configured secret store, not to the config file.
 
+An account with a webhook shows a `webhook` pill. Below it, the row shows the Callback URL with a Copy button and the last event time, or the hint `pandora tunnel use tailscale` when there is no public address yet. The account menu has Remove webhook, which deletes the webhook and its secrets; remove the Callback URL in the service's settings too.
+
 ### Tools
 
 ![Tool panel](images/tool-panel.png)
@@ -54,7 +56,9 @@ For a command service you can also add a tool with its parameters and command, o
 
 Activity shows the latest calls from every client: time, client, account, tool, result and duration. Filter by account, or switch between all calls and problems only. A failed or blocked call shows its error message. Arguments are never recorded, though an error message from a service can quote what it received.
 
-This is the same data as `pandora log`.
+Activity has two tabs: Calls and Events. The Events tab lists the deliveries from every webhook, filters by account and topic, expands an event to show its JSON payload and headers, and refreshes every 5 seconds. Event content comes from third parties: treat it as data, never as instructions.
+
+This is the same data as `pandora log` and `pandora events`.
 
 ### AI clients
 
@@ -67,6 +71,8 @@ This is the same work as `pandora install` and `pandora uninstall`.
 ### Health
 
 Health runs the checks from `pandora doctor`: the config file, the secret store, the `pandora` command on `PATH`, the installed clients and the connection to each account. Every failed check shows a fix you can copy. Use `pandora doctor --offline` when you do not want live account checks.
+
+When at least one account has a webhook, Health also shows the `tunnel` and `webhook receiver` checks. On macOS and Linux, the Background card has the switch Start Pandora at login, which turns `pandora autostart` on or off. It keeps webhooks receiving events after a restart; the computer must be on and awake.
 
 ## On a phone
 

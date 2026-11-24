@@ -16,12 +16,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/PierreOliveira1/pandora/internal/config"
 	"github.com/PierreOliveira1/pandora/internal/core"
+	"github.com/PierreOliveira1/pandora/internal/events"
 	"github.com/PierreOliveira1/pandora/internal/guard"
 	"github.com/PierreOliveira1/pandora/internal/install"
 	"github.com/PierreOliveira1/pandora/internal/registry"
@@ -78,14 +80,20 @@ func TestTheAppPageMayRunOnlyItsOwnStartupScript(t *testing.T) {
 }
 
 type uiFixture struct {
-	ts     *httptest.Server
-	client *http.Client
-	store  *config.Store
-	paths  config.Paths
-	port   string
+	ts      *httptest.Server
+	client  *http.Client
+	store   *config.Store
+	secrets secrets.Store
+	core    *core.Core
+	paths   config.Paths
+	port    string
 }
 
 func newUIFixture(t *testing.T) *uiFixture {
+	return newConfiguredUIFixture(t, nil)
+}
+
+func newConfiguredUIFixture(t *testing.T, configure func(*Options)) *uiFixture {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("PANDORA_HOME", home)
@@ -114,14 +122,18 @@ func newUIFixture(t *testing.T) *uiFixture {
 		InstallEnv: installEnv,
 	})
 	reg := registry.New(store, sec)
-	ui := New(Options{
+	options := Options{
 		Core:     app,
 		Registry: reg,
 		CallLog:  guard.NewLog(paths.CallLog()),
 		Version:  "test",
 		Token:    "test-token",
 		Static:   fstest.MapFS{"index.html": {Data: []byte(testIndexPage)}},
-	})
+	}
+	if configure != nil {
+		configure(&options)
+	}
+	ui := New(options)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -142,11 +154,13 @@ func newUIFixture(t *testing.T) *uiFixture {
 	}
 	_, port, _ := net.SplitHostPort(listener.Addr().String())
 	return &uiFixture{
-		ts:     ts,
-		client: &http.Client{Jar: jar, Timeout: 20 * time.Second},
-		store:  store,
-		paths:  paths,
-		port:   port,
+		ts:      ts,
+		client:  &http.Client{Jar: jar, Timeout: 20 * time.Second},
+		store:   store,
+		secrets: sec,
+		core:    app,
+		paths:   paths,
+		port:    port,
 	}
 }
 
@@ -316,6 +330,276 @@ func TestAToolCanBeTestedFromTheAPI(t *testing.T) {
 	}
 	if !strings.Contains(response, "ana") {
 		t.Errorf("call response = %q, want the account identity", response)
+	}
+}
+
+func addWebhookForUITest(t *testing.T, f *uiFixture, service, account string) {
+	t.Helper()
+	err := f.store.Update(func(cfg *config.Config) error {
+		if cfg.Services == nil {
+			cfg.Services = map[string]*config.Service{}
+		}
+		svc := cfg.Services[service]
+		if svc == nil {
+			svc = &config.Service{Kind: config.KindCommand}
+			cfg.Services[service] = svc
+		}
+		if svc.Accounts == nil {
+			svc.Accounts = map[string]*config.Account{}
+		}
+		acc := svc.Accounts[account]
+		if acc == nil {
+			acc = &config.Account{}
+			svc.Accounts[account] = acc
+		}
+		acc.Webhook = &config.Webhook{ID: "hook-1", Style: "hmac", Challenge: "hub"}
+		if svc.DefaultAccount == "" {
+			svc.DefaultAccount = account
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("adding webhook: %v", err)
+	}
+}
+
+func TestTheWebhookListShowsThePublicURL(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+	addWebhookForUITest(t, f, "one", "local")
+	if err := f.store.Update(func(cfg *config.Config) error {
+		cfg.Webhooks = &config.WebhookSettings{Port: 4321, PublicURL: "https://hooks.example.com/pandora"}
+		return nil
+	}); err != nil {
+		t.Fatalf("saving webhook settings: %v", err)
+	}
+	if err := f.secrets.Set(secrets.WebhookSigningKey("one", "local"), "signing-secret"); err != nil {
+		t.Fatalf("setting signing secret: %v", err)
+	}
+	if err := f.secrets.Set(secrets.WebhookVerifyTokenKey("one", "local"), "verify-token"); err != nil {
+		t.Fatalf("setting verify token: %v", err)
+	}
+
+	status, body := f.do(t, http.MethodGet, "/api/webhooks", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("webhooks status = %d, want 200: %s", status, body)
+	}
+	var infos []core.WebhookInfo
+	if err := json.Unmarshal([]byte(body), &infos); err != nil {
+		t.Fatalf("decoding webhooks: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("webhooks = %+v, want one", infos)
+	}
+	wantURL := "https://hooks.example.com/pandora/hooks/one/local/hook-1"
+	if infos[0].Ref != "one/local" || infos[0].URL != wantURL {
+		t.Fatalf("webhook = %+v, want ref one/local and URL %s", infos[0], wantURL)
+	}
+	wantLocal := "http://127.0.0.1:4321/hooks/one/local/hook-1"
+	if infos[0].LocalURL != wantLocal {
+		t.Fatalf("LocalURL = %q, want %q", infos[0].LocalURL, wantLocal)
+	}
+	if strings.Contains(body, "signing-secret") || strings.Contains(body, "verify-token") {
+		t.Fatal("the webhook list contains a secret")
+	}
+}
+
+func TestRemovingAWebhookRemovesItAndReloads(t *testing.T) {
+	var reloads atomic.Int32
+	f := newConfiguredUIFixture(t, func(options *Options) {
+		options.ReloadWebhooks = func(ctx context.Context) {
+			reloads.Add(1)
+		}
+	})
+	f.login(t)
+	addWebhookForUITest(t, f, "one", "local")
+
+	status, body := f.do(t, http.MethodDelete, "/api/accounts/one/local/webhook", "", csrf())
+	if status != http.StatusOK {
+		t.Fatalf("remove status = %d, want 200: %s", status, body)
+	}
+	if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("remove body = %q, want ok", body)
+	}
+	if reloads.Load() != 1 {
+		t.Fatalf("reload calls = %d, want 1", reloads.Load())
+	}
+
+	status, body = f.do(t, http.MethodGet, "/api/webhooks", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("webhooks status = %d, want 200: %s", status, body)
+	}
+	var infos []core.WebhookInfo
+	if err := json.Unmarshal([]byte(body), &infos); err != nil {
+		t.Fatalf("decoding webhooks: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("webhooks = %+v, want none", infos)
+	}
+	if strings.TrimSpace(body) != "[]" {
+		t.Fatalf("empty webhooks body = %q, want []", body)
+	}
+}
+
+func TestEventsComeNewestFirstAndRespectFilterAndLimit(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+	ctx := context.Background()
+	items := []events.Event{
+		{Service: "one", Account: "local", Topic: "a"},
+		{Service: "one", Account: "local", Topic: "b"},
+		{Service: "two", Account: "local", Topic: "a"},
+		{Service: "one", Account: "local", Topic: "a"},
+		{Service: "one", Account: "other", Topic: "a"},
+		{Service: "one", Account: "local", Topic: "a"},
+	}
+	for i := range items {
+		items[i].Payload = json.RawMessage(fmt.Sprintf(`{"n":%d}`, i+1))
+		if _, _, err := f.core.Events().Append(ctx, items[i], ""); err != nil {
+			t.Fatalf("appending event: %v", err)
+		}
+	}
+
+	status, body := f.do(t, http.MethodGet, "/api/events?service=one&account=local&topic=a&limit=2", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("events status = %d, want 200: %s", status, body)
+	}
+	var recent []events.Event
+	if err := json.Unmarshal([]byte(body), &recent); err != nil {
+		t.Fatalf("decoding events: %v", err)
+	}
+	if len(recent) != 2 || recent[0].Seq != 6 || recent[1].Seq != 4 {
+		t.Fatalf("events = %+v, want seqs 6 and 4", recent)
+	}
+	if string(recent[0].Payload) != `{"n":6}` {
+		t.Fatalf("newest payload = %s", recent[0].Payload)
+	}
+
+	for _, query := range []string{"limit=abc", "limit=501"} {
+		status, body = f.do(t, http.MethodGet, "/api/events?"+query, "", nil)
+		if status != http.StatusBadRequest {
+			t.Fatalf("events with %s status = %d, want 400: %s", query, status, body)
+		}
+	}
+}
+
+func TestTheTunnelWithoutConfigurationReportsExposedFalseAndAProblem(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+
+	status, body := f.do(t, http.MethodGet, "/api/tunnel", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("tunnel status = %d, want 200: %s", status, body)
+	}
+	var info core.TunnelInfo
+	if err := json.Unmarshal([]byte(body), &info); err != nil {
+		t.Fatalf("decoding tunnel: %v", err)
+	}
+	if info.Exposed {
+		t.Fatal("tunnel is exposed without configuration")
+	}
+	if info.Problem != "no tunnel: run pandora tunnel use tailscale" {
+		t.Fatalf("Problem = %q", info.Problem)
+	}
+}
+
+type fakeUIAutostartControl struct {
+	enabled      bool
+	enableCalls  int
+	disableCalls int
+}
+
+func (f *fakeUIAutostartControl) Enable(ctx context.Context) error {
+	f.enableCalls++
+	f.enabled = true
+	return nil
+}
+
+func (f *fakeUIAutostartControl) Disable(ctx context.Context) error {
+	f.disableCalls++
+	f.enabled = false
+	return nil
+}
+
+func (f *fakeUIAutostartControl) Enabled(ctx context.Context) (bool, error) {
+	return f.enabled, nil
+}
+
+func TestAutostartTurnsOnAndOffWithAFakeControl(t *testing.T) {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		t.Skip("autostart is supported only on macOS and Linux")
+	}
+	fake := &fakeUIAutostartControl{}
+	f := newConfiguredUIFixture(t, func(options *Options) {
+		options.Autostart = func() (AutostartControl, error) {
+			return fake, nil
+		}
+	})
+	f.login(t)
+
+	status, body := f.do(t, http.MethodGet, "/api/autostart", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("autostart status = %d, want 200: %s", status, body)
+	}
+	var state struct {
+		Supported bool `json:"supported"`
+		Enabled   bool `json:"enabled"`
+	}
+	if err := json.Unmarshal([]byte(body), &state); err != nil {
+		t.Fatalf("decoding autostart: %v", err)
+	}
+	if !state.Supported || state.Enabled {
+		t.Fatalf("autostart = %+v, want supported and disabled", state)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/autostart", `{"enabled":true}`, csrf())
+	if status != http.StatusOK {
+		t.Fatalf("enable status = %d, want 200: %s", status, body)
+	}
+	if err := json.Unmarshal([]byte(body), &state); err != nil {
+		t.Fatalf("decoding enabled autostart: %v", err)
+	}
+	if !state.Supported || !state.Enabled || fake.enableCalls != 1 || !fake.enabled {
+		t.Fatalf("enable result = %+v, calls = %d", state, fake.enableCalls)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/autostart", `{"enabled":false}`, csrf())
+	if status != http.StatusOK {
+		t.Fatalf("disable status = %d, want 200: %s", status, body)
+	}
+	if err := json.Unmarshal([]byte(body), &state); err != nil {
+		t.Fatalf("decoding disabled autostart: %v", err)
+	}
+	if !state.Supported || state.Enabled || fake.disableCalls != 1 || fake.enabled {
+		t.Fatalf("disable result = %+v, calls = %d", state, fake.disableCalls)
+	}
+}
+
+func TestAutostartWithoutAControlIsUnsupported(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+
+	status, body := f.do(t, http.MethodGet, "/api/autostart", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("autostart status = %d, want 200: %s", status, body)
+	}
+	var state struct {
+		Supported bool `json:"supported"`
+		Enabled   bool `json:"enabled"`
+	}
+	if err := json.Unmarshal([]byte(body), &state); err != nil {
+		t.Fatalf("decoding autostart: %v", err)
+	}
+	if state.Supported || state.Enabled {
+		t.Fatalf("autostart = %+v, want unsupported and disabled", state)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/autostart", `{"enabled":true}`, csrf())
+	if status != http.StatusBadRequest {
+		t.Fatalf("autostart change status = %d, want 400: %s", status, body)
+	}
+	if !strings.Contains(body, "starting Pandora at login is not supported on this system") {
+		t.Fatalf("autostart change body = %q", body)
 	}
 }
 

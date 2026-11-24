@@ -58,6 +58,7 @@ func (c *Core) SkillDoc(ctx context.Context) (skill.Doc, error) {
 				Name:        accountName,
 				Description: account.Description,
 				ReadOnly:    account.ReadOnly,
+				Webhook:     account.Webhook != nil,
 			})
 		}
 
@@ -294,6 +295,7 @@ func (c *Core) Doctor(ctx context.Context, offline bool) []DoctorCheck {
 	checks = append(checks, c.doctorPath())
 	if err == nil {
 		checks = append(checks, c.doctorSkills(ctx, cfg.Integrations)...)
+		checks = append(checks, c.doctorWebhooks(ctx)...)
 	}
 	if !offline {
 		checks = append(checks, c.doctorAccounts(ctx)...)

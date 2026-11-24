@@ -18,22 +18,32 @@ import (
 	"github.com/PierreOliveira1/pandora/internal/registry"
 )
 
+type AutostartControl interface {
+	Enable(ctx context.Context) error
+	Disable(ctx context.Context) error
+	Enabled(ctx context.Context) (bool, error)
+}
+
 type Options struct {
-	Core     *core.Core
-	Registry *registry.Registry
-	CallLog  *guard.Log
-	Version  string
-	Static   fs.FS
-	Token    string
+	Core           *core.Core
+	Registry       *registry.Registry
+	CallLog        *guard.Log
+	Version        string
+	Static         fs.FS
+	Token          string
+	ReloadWebhooks func(ctx context.Context)
+	Autostart      func() (AutostartControl, error)
 }
 
 type Server struct {
-	core     *core.Core
-	registry *registry.Registry
-	callLog  *guard.Log
-	version  string
-	static   fs.FS
-	token    string
+	core           *core.Core
+	registry       *registry.Registry
+	callLog        *guard.Log
+	version        string
+	static         fs.FS
+	token          string
+	reloadWebhooks func(ctx context.Context)
+	autostart      func() (AutostartControl, error)
 
 	loginsMu sync.Mutex
 	logins   map[string]*loginState
@@ -49,13 +59,15 @@ func New(o Options) *Server {
 		static = defaultStatic()
 	}
 	return &Server{
-		core:     o.Core,
-		registry: o.Registry,
-		callLog:  o.CallLog,
-		version:  o.Version,
-		static:   static,
-		token:    token,
-		logins:   map[string]*loginState{},
+		core:           o.Core,
+		registry:       o.Registry,
+		callLog:        o.CallLog,
+		version:        o.Version,
+		static:         static,
+		token:          token,
+		reloadWebhooks: o.ReloadWebhooks,
+		autostart:      o.Autostart,
+		logins:         map[string]*loginState{},
 	}
 }
 

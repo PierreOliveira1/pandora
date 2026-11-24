@@ -66,6 +66,30 @@ This command has no flags of its own.
 pandora auth todoist/work
 ```
 
+## pandora autostart
+
+Start the Pandora daemon at login.
+
+```
+pandora autostart on|off|status
+```
+
+This command has no flags of its own.
+
+| Subcommand | Meaning |
+| --- | --- |
+| `on` | Install the login item so the daemon starts at login. |
+| `off` | Remove the login item. |
+| `status` | Print `on` or `off`. |
+
+```sh
+pandora autostart on
+pandora autostart status
+pandora autostart off
+```
+
+Pandora suggests this after `pandora webhook add`; it never enables it by itself.
+
 ## pandora call
 
 Call a tool on an account.
@@ -271,6 +295,114 @@ pandora doctor --offline
 ```
 
 The command exits with status 1 when a check fails.
+
+## pandora events
+
+Read webhook events from the local queue.
+
+```
+pandora events [<service>[/<account>]] [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--topic string` | Only events with this topic. |
+| `--reader string` | Reader name. Default `default`; the AI uses `ai`. |
+| `--limit int` | Maximum events. Default 20; `0` reads all. |
+| `--json` | Output JSON. |
+| `--follow` | Keep printing new events. Checks the queue every 500 ms. With `--json`, prints one JSON object per line. |
+| `--ack` | Mark the printed events as read. |
+
+```sh
+pandora events --reader ai --json
+```
+
+```sh
+pandora events ig/store --topic comments --limit 50
+```
+
+```sh
+pandora events --follow --json --reader ai --ack
+```
+
+Text mode prints one block per event: seq, local time, account, topic and the compact JSON payload.
+
+### pandora events ack
+
+Mark events as read.
+
+```
+pandora events ack <seq>... [flags]
+pandora events ack --all [<service>[/<account>]] [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--reader string` | Reader name. Default `default`; the AI uses `ai`. |
+| `--topic string` | Only events with this topic. |
+| `--all` | Mark every pending event matching the filter. |
+
+```sh
+pandora events ack 12 13 --reader ai
+```
+
+```sh
+pandora events ack --all --topic comments --reader ai
+```
+
+### pandora events reader add
+
+Run a program for each new event.
+
+```
+pandora events reader add <name> [flags] -- <program> <args>
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--from string` | Only events from `service` or `service/account`. |
+| `--topic string` | Only events with this topic. |
+| `--timeout int` | Timeout in seconds. Default 60. |
+| `--replay` | Also run the program for the events already in the queue. |
+| `--replay` | Also run the program for the events already in the queue. By default a new reader starts with the next event. |
+
+```sh
+pandora events reader add worker \
+  --from ig/store --topic comments \
+  -- /Users/me/scripts/reply.sh
+```
+
+The program receives the event as JSON on stdin and the variables `PANDORA_EVENT_SEQ`, `PANDORA_EVENT_ID`, `PANDORA_EVENT_SERVICE`, `PANDORA_EVENT_ACCOUNT` and `PANDORA_EVENT_TOPIC`. There is no shell and the program does not receive the account's secrets.
+
+### pandora events reader list
+
+List the command readers.
+
+```
+pandora events reader list [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--json` | Output JSON. |
+
+```sh
+pandora events reader list
+```
+
+### pandora events reader remove
+
+Remove a command reader.
+
+```
+pandora events reader remove <name> [flags]
+```
+
+This command has no flags of its own.
+
+```sh
+pandora events reader remove worker
+```
 
 ## pandora expose
 
@@ -589,6 +721,68 @@ pandora tools [service] [flags]
 pandora tools todoist
 ```
 
+## pandora tunnel
+
+Expose the webhook receiver to the internet.
+
+```
+pandora tunnel use tailscale
+pandora tunnel use url <https-base>
+pandora tunnel status
+pandora tunnel off
+```
+
+### pandora tunnel use
+
+Choose how webhooks reach this machine.
+
+```
+pandora tunnel use tailscale
+pandora tunnel use url <https-base>
+```
+
+This command has no flags of its own.
+
+```sh
+pandora tunnel use tailscale
+```
+
+```sh
+pandora tunnel use url https://hooks.example.com
+```
+
+`tailscale` uses Tailscale Funnel and prints the public address. `url` requires an HTTPS base that forwards to the local port. The command lists the Callback URLs that changed; update them in each service.
+
+### pandora tunnel status
+
+Show the tunnel.
+
+```
+pandora tunnel status [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--json` | Output JSON. |
+
+```sh
+pandora tunnel status
+```
+
+### pandora tunnel off
+
+Stop publishing the receiver.
+
+```
+pandora tunnel off [flags]
+```
+
+This command has no flags of its own.
+
+```sh
+pandora tunnel off
+```
+
 ## pandora ui
 
 Open the local Pandora UI.
@@ -626,3 +820,116 @@ pandora uninstall
 ```sh
 pandora uninstall cursor claude-code
 ```
+
+## pandora webhook
+
+Manage incoming webhooks.
+
+```
+pandora webhook [command]
+```
+
+### pandora webhook add
+
+Receive webhook deliveries for an account.
+
+```
+pandora webhook add <service>[/<account>] --style hmac|token|none [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--style string` | Verification style: `hmac`, `token` or `none`. Required. |
+| `--challenge string` | Use `hub` to answer the GET verification with `hub.challenge`. |
+| `--signature-header string` | HMAC signature header. Default `X-Hub-Signature-256`. |
+| `--signature-prefix string` | HMAC value prefix. Default `sha256=`. |
+| `--encoding string` | HMAC encoding: `hex` or `base64`. Default `hex`. |
+| `--token-header string` | Header that carries a token style token. |
+| `--token-query string` | Query parameter that carries a token style token. |
+| `--topic-header string` | Header that carries the event topic. |
+| `--topic-field stringArray` | JSON path that carries the event topic. Repeatable. |
+| `--id-header string` | Header that carries the delivery id, used for deduplication. |
+| `--insecure` | Accept unsigned deliveries with `--style none`. |
+
+For `--style hmac`, Pandora asks for the signing secret without showing it, or reads it from stdin. For `--style token`, Pandora generates the token. `--style none` requires `--insecure`.
+
+```sh
+pandora webhook add instagram/store --style hmac --challenge hub \
+  --topic-field entry.0.changes.0.field --topic-field entry.0.messaging
+```
+
+```sh
+pandora webhook add github/work --style hmac \
+  --topic-header X-GitHub-Event --id-header X-GitHub-Delivery
+```
+
+The command prints the Callback URL, the Verify token when there is a hub challenge, and how to test it. The token style token is printed only in a terminal; run `pandora webhook show <s>/<a> --token` there to see it.
+
+### pandora webhook list
+
+List webhooks.
+
+```
+pandora webhook list [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--json` | Output JSON. |
+
+```sh
+pandora webhook list
+```
+
+### pandora webhook show
+
+Show one webhook.
+
+```
+pandora webhook show <service>[/<account>] [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--token` | Show the token style token, only in a terminal. |
+| `--json` | Output JSON. |
+
+```sh
+pandora webhook show instagram/store
+```
+
+```sh
+pandora webhook show instagram/store --token
+```
+
+### pandora webhook remove
+
+Remove a webhook and its signing secrets.
+
+```
+pandora webhook remove <service>[/<account>] [flags]
+```
+
+This command has no flags of its own.
+
+```sh
+pandora webhook remove instagram/store
+```
+
+Delete the Callback URL from the service's settings too.
+
+### pandora webhook test
+
+Send a verification and a signed test delivery.
+
+```
+pandora webhook test <service>[/<account>] [flags]
+```
+
+This command has no flags of its own.
+
+```sh
+pandora webhook test instagram/store
+```
+
+Read the test event with `pandora events instagram/store`.

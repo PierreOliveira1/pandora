@@ -5,16 +5,18 @@
 	import {
 		loadOverview,
 		loadStatus,
+		loadWebhooks,
 		logoutAccount,
 		makeDefaultAccount,
 		removeAccount,
 		removeService,
+		removeWebhook,
 		renameAccount,
 		renameService,
 		startLogin,
 		waitForLogin
 	} from '../api.ts';
-	import type { AccountView, Overview, ServiceView, StatusInfo } from '../types.ts';
+	import type { AccountView, Overview, ServiceView, StatusInfo, WebhookInfo } from '../types.ts';
 	import AddAccountPanel from './AddAccountPanel.svelte';
 	import RenameDialog from './RenameDialog.svelte';
 	import RulesPanel from './RulesPanel.svelte';
@@ -25,11 +27,13 @@
 		| { type: 'account'; service: ServiceView; account: AccountView };
 
 	type RemoveTarget = RenameTarget;
+	type WebhookTarget = { service: ServiceView; account: AccountView };
 
 	let overview = $state<Overview | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let statuses = $state<Record<string, StatusInfo>>({});
+	let webhooks = $state<Record<string, WebhookInfo>>({});
 	let statusLoading = $state(false);
 	let statusUnavailable = $state(false);
 	let addOpen = $state(false);
@@ -37,6 +41,8 @@
 	let renameTarget = $state<RenameTarget | null>(null);
 	let removeTarget = $state<RemoveTarget | null>(null);
 	let removing = $state(false);
+	let webhookRemoveTarget = $state<WebhookTarget | null>(null);
+	let removingWebhook = $state(false);
 	let rulesTarget = $state<string | null>(null);
 
 	const removeMessage = $derived.by(() => {
@@ -45,6 +51,11 @@
 			return `Remove ${removeTarget.service.name}? All its accounts and saved credentials will be deleted.`;
 		}
 		return `Remove ${removeTarget.service.name}/${removeTarget.account.name}? Its saved credentials will be deleted.`;
+	});
+
+	const removeWebhookMessage = $derived.by(() => {
+		if (!webhookRemoveTarget) return '';
+		return `Remove the webhook of ${webhookRemoveTarget.service.name}/${webhookRemoveTarget.account.name}? Pandora stops receiving its events. Remove the callback URL from the service's settings too.`;
 	});
 
 	const renameTitle = $derived(
@@ -66,7 +77,12 @@
 		error = '';
 
 		try {
-			overview = await loadOverview();
+			const [data, hooks] = await Promise.all([
+				loadOverview(),
+				loadWebhooks().catch((): WebhookInfo[] => [])
+			]);
+			overview = data;
+			webhooks = Object.fromEntries(hooks.map((webhook) => [webhook.ref, webhook]));
 			loading = false;
 			void loadStatuses();
 		} catch (cause) {
@@ -92,7 +108,12 @@
 
 	async function refreshAll(): Promise<void> {
 		try {
-			overview = await loadOverview();
+			const [data, hooks] = await Promise.all([
+				loadOverview(),
+				loadWebhooks().catch((): WebhookInfo[] => [])
+			]);
+			overview = data;
+			webhooks = Object.fromEntries(hooks.map((webhook) => [webhook.ref, webhook]));
 			error = '';
 			void loadStatuses();
 		} catch (cause) {
@@ -203,6 +224,25 @@
 			removing = false;
 		}
 	}
+
+	async function confirmRemoveWebhook(): Promise<void> {
+		const target = webhookRemoveTarget;
+		if (!target || removingWebhook) return;
+
+		removingWebhook = true;
+
+		try {
+			await removeWebhook(target.service.name, target.account.name);
+			showToast('Webhook removed.');
+			webhookRemoveTarget = null;
+			await refreshAll();
+		} catch (cause) {
+			webhookRemoveTarget = null;
+			showToast(errorMessage(cause), 'error');
+		} finally {
+			removingWebhook = false;
+		}
+	}
 </script>
 
 <div>
@@ -298,6 +338,8 @@
 					onSetDefault={(account) => void setDefault(service, account)}
 					onLogout={(account) => void logout(service, account)}
 					onRules={(account) => (rulesTarget = `${service.name}/${account.name}`)}
+					{webhooks}
+					onRemoveWebhook={(account) => (webhookRemoveTarget = { service, account })}
 				/>
 			{/each}
 		</div>
@@ -326,6 +368,18 @@
 			if (!removing) removeTarget = null;
 		}}
 		onconfirm={() => void confirmRemove()}
+	/>
+{/if}
+
+{#if webhookRemoveTarget}
+	<ConfirmDialog
+		title="Remove webhook"
+		message={removeWebhookMessage}
+		loading={removingWebhook}
+		onclose={() => {
+			if (!removingWebhook) webhookRemoveTarget = null;
+		}}
+		onconfirm={() => void confirmRemoveWebhook()}
 	/>
 {/if}
 

@@ -3,17 +3,20 @@ import type {
 	AccountPolicy,
 	AddAccountInput,
 	AddAccountResponse,
+	AutostartInfo,
 	CallToolInput,
 	CallToolResult,
 	CommandToolInput,
 	DoctorCheck,
+	EventView,
 	InstallReport,
 	IntegrationView,
 	LoginResult,
 	LogEntry,
 	Overview,
 	StatusInfo,
-	ToolCatalog
+	ToolCatalog,
+	WebhookInfo
 } from './types.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -173,6 +176,32 @@ export const api = {
 	getDoctor(offline = false): Promise<DoctorCheck[]> {
 		const query = offline ? '?offline=1' : '';
 		return request<DoctorCheck[]>('GET', `/api/doctor${query}`);
+	},
+
+	getWebhooks(): Promise<WebhookInfo[]> {
+		return request<WebhookInfo[]>('GET', '/api/webhooks');
+	},
+
+	deleteWebhook(service: string, account: string): Promise<void> {
+		return request<void>('DELETE', `${accountPath(service, account)}/webhook`);
+	},
+
+	getEvents(
+		options: { service?: string; account?: string; topic?: string; limit?: number } = {}
+	): Promise<EventView[]> {
+		const query = new URLSearchParams({ limit: String(options.limit ?? 100) });
+		if (options.service) query.set('service', options.service);
+		if (options.account) query.set('account', options.account);
+		if (options.topic) query.set('topic', options.topic);
+		return request<EventView[]>('GET', `/api/events?${query.toString()}`);
+	},
+
+	getAutostart(): Promise<AutostartInfo> {
+		return request<AutostartInfo>('GET', '/api/autostart');
+	},
+
+	setAutostart(enabled: boolean): Promise<AutostartInfo> {
+		return request<AutostartInfo>('PUT', '/api/autostart', { enabled });
 	},
 
 	addCommandTool(service: string, tool: CommandToolInput): Promise<void> {

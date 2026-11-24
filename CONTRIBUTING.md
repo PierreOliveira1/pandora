@@ -118,11 +118,22 @@ Before you open it:
 
 ## Releases
 
-Maintainers release from GitHub Actions. Open **Actions > Release > Run workflow**, choose `patch`, `minor` or `major` (or type an exact version), and run it on `main`. The workflow runs the tests, creates the `vX.Y.Z` tag on `main`, and GoReleaser publishes a GitHub Release with the binaries, `checksums.txt` and a changelog grouped from the commits.
+Releases are published by GitHub Actions. The release workflow calls `ci.yml` as a reusable workflow and runs the whole CI before GoReleaser: `gofmt`, `go vet` and `go test` on Linux and macOS; build and vet on Windows; the UI check, prettier, unit tests and build, including the check that `internal/webui/dist` is up to date; and a GoReleaser snapshot of every OS and architecture. Only when all of it passes does GoReleaser publish a GitHub Release with the binaries, `checksums.txt` and a changelog grouped from the commits. A failure publishes nothing.
 
-Pushing a `v*` tag by hand also starts a release. Builds cover Linux, macOS, Windows and FreeBSD on amd64 and arm64. Windows support is experimental.
+The simplest way is to create and push a `v*` tag on `main`:
 
-CI runs on every push and pull request: `gofmt`, `go vet` and `go test` on Linux and macOS; build and vet on Windows; the UI check, prettier, tests and a check that `internal/webui/dist` matches the UI source; and a snapshot build of every OS and architecture.
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Creating the tag or the release from the GitHub interface starts the same workflow.
+
+You can also run it from **Actions > Release > Run workflow** on `main`. Choose `patch`, `minor` or `major`, or type an exact version. The workflow creates the `vX.Y.Z` tag on `main` and then runs the same checks and publish.
+
+Builds cover Linux, macOS, Windows and FreeBSD on amd64 and arm64. Windows support is experimental.
+
+Before you release, commit the UI build: after any change under `ui/`, run `bun run build` and commit `internal/webui/dist`. CI fails when the committed build differs from the UI source.
 
 ## License
 

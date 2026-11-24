@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { errorMessage } from '#lib/shared/api/client.ts';
-	import { Button, Icon, Skeleton, Spinner, showToast } from '#lib/shared/ui/index.ts';
-	import { loadChecks } from '../api.ts';
-	import type { DoctorCheck } from '../types.ts';
+	import { Button, Icon, Skeleton, Spinner, Switch, showToast } from '#lib/shared/ui/index.ts';
+	import { loadAutostart, loadChecks, saveAutostart } from '../api.ts';
+	import type { AutostartInfo, DoctorCheck } from '../types.ts';
 
 	let checks = $state<DoctorCheck[]>([]);
 	let loading = $state(true);
@@ -12,11 +12,16 @@
 	let error = $state('');
 	let fullError = $state('');
 	let copied = $state<string | null>(null);
+	let autostart = $state<AutostartInfo | null>(null);
+	let autostartEnabled = $state(false);
+	let autostartSaving = $state(false);
+	let autostartError = $state('');
 
 	const problemCount = $derived(checks.filter((check) => !check.ok).length);
 
 	onMount(() => {
 		void runChecks();
+		void loadAutostartSettings();
 	});
 
 	async function runChecks(): Promise<void> {
@@ -56,6 +61,47 @@
 		} catch {
 			showToast('Could not copy the fix to the clipboard.', 'error');
 		}
+	}
+
+	async function loadAutostartSettings(): Promise<void> {
+		try {
+			const info = await loadAutostart();
+			autostart = info;
+			autostartEnabled = info.enabled;
+		} catch {
+			autostart = null;
+		}
+	}
+
+	async function updateAutostart(enabled: boolean): Promise<void> {
+		if (!autostart?.supported || autostartSaving) return;
+
+		const previous = autostart.enabled;
+		autostartSaving = true;
+		autostartError = '';
+		autostartEnabled = enabled;
+
+		try {
+			const info = await saveAutostart(enabled);
+			autostart = info;
+			autostartEnabled = info.enabled;
+			showToast(
+				info.enabled ? 'Pandora now starts at login.' : 'Pandora no longer starts at login.'
+			);
+		} catch (cause) {
+			autostartEnabled = previous;
+			autostart = { ...autostart, enabled: previous };
+			autostartError = errorMessage(cause);
+		} finally {
+			autostartSaving = false;
+		}
+	}
+
+	function handleAutostartChange(event: Event): void {
+		const target = event.target;
+		if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') return;
+		autostartEnabled = target.checked;
+		void updateAutostart(target.checked);
 	}
 </script>
 
@@ -184,6 +230,25 @@
 				{/each}
 			</ul>
 		</div>
+	{/if}
+
+	{#if !loading && autostart?.supported}
+		<section
+			class="mt-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5 dark:border-zinc-800 dark:bg-zinc-900"
+		>
+			<h2 class="text-base font-semibold">Background</h2>
+			<div class="mt-2" onchange={handleAutostartChange}>
+				<Switch
+					bind:checked={autostartEnabled}
+					label="Start Pandora at login"
+					description="Keeps webhooks receiving events after a restart. Your computer must be on and awake."
+					disabled={autostartSaving}
+				/>
+			</div>
+			{#if autostartError}
+				<p class="mt-2 text-sm text-red-600 dark:text-red-400">{autostartError}</p>
+			{/if}
+		</section>
 	{/if}
 </div>
 

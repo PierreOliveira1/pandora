@@ -37,11 +37,14 @@ internal/
   secrets/          # secret store interface + keychain, file and memory implementations
   registry/         # rules for creating, renaming, removing services and accounts
   source/           # Source interface and one sub-package per kind
+  events/           # local event queue: append, dedup, readers, retention
+  webhook/          # webhook receiver: verification, topic, delivery to the queue
+  tunnel/           # public address for the receiver: Tailscale Funnel or a static URL
   oauth/            # OAuth discovery, client registration, login flow, token refresh
   core/             # the facade used by cli, daemon, gateway and webui
   guard/            # policies (readonly, allow, deny) and the call log
   skill/            # renders the skill the AI reads (SKILL.md + one file per service)
-  daemon/           # background process sharing connections, its client and autostart
+  daemon/           # background process sharing connections, the webhook receiver and command readers; its client and autostart
   gateway/          # MCP server for `pandora serve`
   install/          # writes the skill or the MCP entry into AI client configs
   webui/            # local HTTP API + embedded UI build (dist/ is generated, do not edit)
@@ -54,7 +57,7 @@ Do not create generic `utils`, `helpers` or `common` packages.
 
 ## Rules
 
-1. **Layers.** `cli`, `daemon`, `gateway` and `webui` only parse input, call `core` and format output. Business rules live in `registry`, `core`, `guard`, `source/*` and `oauth`. Nothing in `cli` touches config files or the keychain directly.
+1. **Layers.** `cli`, `daemon`, `gateway` and `webui` only parse input, call `core` and format output. Business rules live in `registry`, `core`, `guard`, `source/*`, `oauth`, `events`, `webhook` and `tunnel`. Nothing in `cli` touches config files or the keychain directly.
 2. **No secrets in the config file.** `config.toml` holds no token, password, API key or header value that grants access. Those live in the secret store under the keys described in `internal/secrets`. Never print a secret: not in logs, errors, `list` output or the UI.
 3. **Stdout belongs to the protocol in `serve`.** In `pandora serve`, stdout carries MCP messages only. Logs go to stderr or to files under the state directory. Upstream stdio servers write their stderr to a log file, never to our stdout.
 4. **Several processes run at once.** AI clients run `pandora` commands in parallel, MCP clients start their own `pandora serve`, and the daemon and UI run beside them. Every config write takes the config lock and writes atomically (temp file + rename). Every OAuth token refresh takes the account lock and re-reads the token before refreshing.

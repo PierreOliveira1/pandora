@@ -115,6 +115,14 @@ func (c *Client) Status(ctx context.Context, ref string) ([]core.StatusInfo, err
 	return infos, nil
 }
 
+func (c *Client) ReloadWebhooks(ctx context.Context) (WebhooksState, error) {
+	var state WebhooksState
+	if err := c.request(ctx, http.MethodPost, "/v1/webhooks/reload", struct{}{}, &state); err != nil {
+		return WebhooksState{}, err
+	}
+	return state, nil
+}
+
 func (c *Client) Shutdown(ctx context.Context) error {
 	return c.request(ctx, http.MethodPost, "/v1/shutdown", struct{}{}, nil)
 }

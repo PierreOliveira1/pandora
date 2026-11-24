@@ -41,7 +41,8 @@ function renderRow(status: StatusInfo): void {
 			onRemove: () => {},
 			onSetDefault: () => {},
 			onLogout: () => {},
-			onRules: () => {}
+			onRules: () => {},
+			onRemoveWebhook: () => {}
 		}
 	});
 }

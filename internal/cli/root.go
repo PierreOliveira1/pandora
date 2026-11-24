@@ -39,6 +39,7 @@ type deps struct {
 	stdin      io.Reader
 	stdout     io.Writer
 	stderr     io.Writer
+	autostart  func() (daemon.Autostart, error)
 }
 
 type backend interface {
@@ -103,6 +104,9 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		stdin:      stdin,
 		stdout:     stdout,
 		stderr:     stderr,
+		autostart: func() (daemon.Autostart, error) {
+			return defaultAutostart(paths)
+		},
 	})
 	root.SetArgs(args)
 
@@ -169,6 +173,10 @@ func newRoot(d deps) *cobra.Command {
 		newServe(d),
 		newExpose(d),
 		newUI(d),
+		newWebhook(d),
+		newEvents(d),
+		newTunnel(d),
+		newAutostart(d),
 	)
 	return root
 }

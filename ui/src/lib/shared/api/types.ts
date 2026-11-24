@@ -125,6 +125,31 @@ export type LogEntry = {
 	error?: string;
 };
 
+export type WebhookInfo = {
+	ref: string;
+	style: string;
+	challenge?: string;
+	url?: string;
+	local_url?: string;
+	last_event_at?: string;
+};
+
+export type EventView = {
+	seq: number;
+	id: string;
+	received_at: string;
+	service: string;
+	account: string;
+	topic?: string;
+	headers?: Record<string, string>;
+	payload: JsonValue;
+};
+
+export type AutostartInfo = {
+	supported: boolean;
+	enabled: boolean;
+};
+
 export type AccountView = {
 	name: string;
 	description?: string;

@@ -395,6 +395,11 @@ func (r *Registry) RenameAccount(ref Ref, newAccount string) error {
 		if service.DefaultAccount == resolved.Account {
 			service.DefaultAccount = newAccount
 		}
+		for i := range cfg.Readers {
+			if cfg.Readers[i].Service == resolved.Service && cfg.Readers[i].Account == resolved.Account {
+				cfg.Readers[i].Account = newAccount
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -436,6 +441,11 @@ func (r *Registry) RenameService(oldName, newName string) error {
 		}
 		delete(cfg.Services, oldName)
 		cfg.Services[newName] = service
+		for i := range cfg.Readers {
+			if cfg.Readers[i].Service == oldName {
+				cfg.Readers[i].Service = newName
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -554,7 +564,7 @@ func firstAccount(accounts map[string]*config.Account) string {
 }
 
 func accountSecretKeys(service, account string, acct *config.Account) []string {
-	keys := make([]string, 0, len(acct.SecretEnv)+len(acct.SecretHeaders)+1)
+	keys := make([]string, 0, len(acct.SecretEnv)+len(acct.SecretHeaders)+3)
 	for _, name := range acct.SecretEnv {
 		keys = append(keys, secrets.EnvKey(service, account, name))
 	}
@@ -562,11 +572,13 @@ func accountSecretKeys(service, account string, acct *config.Account) []string {
 		keys = append(keys, secrets.HeaderKey(service, account, name))
 	}
 	keys = append(keys, secrets.OAuthTokenKey(service, account))
+	keys = append(keys, secrets.WebhookSigningKey(service, account))
+	keys = append(keys, secrets.WebhookVerifyTokenKey(service, account))
 	return keys
 }
 
 func (r *Registry) moveAccountSecrets(service, oldAccount, newAccount string, acct *config.Account) error {
-	pairs := make([][2]string, 0, len(acct.SecretEnv)+len(acct.SecretHeaders)+1)
+	pairs := make([][2]string, 0, len(acct.SecretEnv)+len(acct.SecretHeaders)+3)
 	for _, name := range acct.SecretEnv {
 		pairs = append(pairs, [2]string{
 			secrets.EnvKey(service, oldAccount, name),
@@ -583,6 +595,14 @@ func (r *Registry) moveAccountSecrets(service, oldAccount, newAccount string, ac
 		secrets.OAuthTokenKey(service, oldAccount),
 		secrets.OAuthTokenKey(service, newAccount),
 	})
+	pairs = append(pairs, [2]string{
+		secrets.WebhookSigningKey(service, oldAccount),
+		secrets.WebhookSigningKey(service, newAccount),
+	})
+	pairs = append(pairs, [2]string{
+		secrets.WebhookVerifyTokenKey(service, oldAccount),
+		secrets.WebhookVerifyTokenKey(service, newAccount),
+	})
 	if err := r.movePairs(pairs); err != nil {
 		return fmt.Errorf("moving secrets of %s/%s: %w", service, oldAccount, err)
 	}
@@ -590,7 +610,7 @@ func (r *Registry) moveAccountSecrets(service, oldAccount, newAccount string, ac
 }
 
 func (r *Registry) moveServiceSecrets(oldName, newName string, service *config.Service) error {
-	pairs := make([][2]string, 0, len(service.Accounts)*3+1)
+	pairs := make([][2]string, 0, len(service.Accounts)*5+1)
 	for accountName, account := range service.Accounts {
 		for _, name := range account.SecretEnv {
 			pairs = append(pairs, [2]string{
@@ -607,6 +627,14 @@ func (r *Registry) moveServiceSecrets(oldName, newName string, service *config.S
 		pairs = append(pairs, [2]string{
 			secrets.OAuthTokenKey(oldName, accountName),
 			secrets.OAuthTokenKey(newName, accountName),
+		})
+		pairs = append(pairs, [2]string{
+			secrets.WebhookSigningKey(oldName, accountName),
+			secrets.WebhookSigningKey(newName, accountName),
+		})
+		pairs = append(pairs, [2]string{
+			secrets.WebhookVerifyTokenKey(oldName, accountName),
+			secrets.WebhookVerifyTokenKey(newName, accountName),
 		})
 	}
 	pairs = append(pairs, [2]string{

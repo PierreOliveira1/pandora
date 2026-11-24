@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofrs/flock"
@@ -18,6 +19,8 @@ import (
 	"github.com/PierreOliveira1/pandora/internal/core"
 	"github.com/PierreOliveira1/pandora/internal/source"
 )
+
+var ErrAlreadyRunning = errors.New("daemon already running")
 
 type Health struct {
 	PID         int       `json:"pid"`
@@ -27,24 +30,34 @@ type Health struct {
 }
 
 type Server struct {
-	core         *core.Core
-	version      string
-	idle         time.Duration
-	startedAt    time.Time
-	mu           sync.Mutex
-	lastActivity time.Time
-	inflight     int
-	shutdown     chan struct{}
-	shutdownOnce sync.Once
+	core          *core.Core
+	version       string
+	idle          time.Duration
+	startedAt     time.Time
+	mu            sync.Mutex
+	lastActivity  time.Time
+	inflight      int
+	shutdown      chan struct{}
+	shutdownOnce  sync.Once
+	webhooksMu    sync.Mutex
+	receiver      *http.Server
+	receiverPort  int
+	active        atomic.Bool
+	readers       map[string]*runningReader
+	readerBackoff []time.Duration
+	reloadEvery   time.Duration
 }
 
 func NewServer(c *core.Core, version string, idle time.Duration) *Server {
 	return &Server{
-		core:      c,
-		version:   version,
-		idle:      idle,
-		startedAt: time.Now(),
-		shutdown:  make(chan struct{}),
+		core:          c,
+		version:       version,
+		idle:          idle,
+		startedAt:     time.Now(),
+		shutdown:      make(chan struct{}),
+		readers:       map[string]*runningReader{},
+		readerBackoff: []time.Duration{10 * time.Second, time.Minute, 5 * time.Minute, 15 * time.Minute},
+		reloadEvery:   30 * time.Second,
 	}
 }
 
@@ -109,7 +122,7 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 		return fmt.Errorf("locking daemon socket: %w", err)
 	}
 	if !locked {
-		return errors.New("daemon already running")
+		return ErrAlreadyRunning
 	}
 	defer lock.Unlock()
 	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -141,15 +154,34 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 	mux.HandleFunc("POST /v1/status", s.handleStatus)
 	mux.HandleFunc("GET /v1/health", s.handleHealth)
 	mux.HandleFunc("POST /v1/shutdown", s.handleShutdown)
+	mux.HandleFunc("POST /v1/webhooks/reload", s.handleWebhooksReload)
 
 	httpServer := &http.Server{
 		Handler:           s.track(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	s.reloadWebhooks(ctx)
+	tunnelCtx, stopTunnel := context.WithCancel(ctx)
+	var tunnelWait sync.WaitGroup
+	tunnelWait.Add(1)
+	go func() {
+		defer tunnelWait.Done()
+		s.restoreTunnel(tunnelCtx)
+	}()
 	serveDone := make(chan error, 1)
 	go func() {
 		serveDone <- httpServer.Serve(listener)
 	}()
+
+	var reloadTicker *time.Ticker
+	var reloadC <-chan time.Time
+	if s.reloadEvery > 0 {
+		reloadTicker = time.NewTicker(s.reloadEvery)
+		reloadC = reloadTicker.C
+		defer reloadTicker.Stop()
+	}
+	pruneTicker := time.NewTicker(10 * time.Minute)
+	defer pruneTicker.Stop()
 
 	var ticker *time.Ticker
 	var idleC <-chan time.Time
@@ -182,6 +214,12 @@ loop:
 				serveErr = err
 			}
 			break loop
+		case <-reloadC:
+			s.reloadWebhooks(ctx)
+		case <-pruneTicker.C:
+			if err := s.core.Events().Prune(ctx, 7*24*time.Hour, 10000); err != nil {
+				slog.Error("pruning webhook events", "error", err)
+			}
 		case <-idleC:
 			if s.idleExceeded() {
 				break loop
@@ -203,6 +241,9 @@ loop:
 		case <-time.After(time.Second):
 		}
 	}
+	s.stopWebhooks()
+	stopTunnel()
+	tunnelWait.Wait()
 
 	stopJanitor()
 	_ = s.core.Close()
@@ -211,6 +252,9 @@ loop:
 }
 
 func (s *Server) idleExceeded() bool {
+	if s.active.Load() {
+		return false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.inflight == 0 && time.Since(s.lastActivity) >= s.idle

@@ -21,6 +21,7 @@ Every AI app has its own way to set up each service. Two accounts of the same se
 - Secrets in the OS keychain, never in the config file.
 - Light on context: the CLI plus a generated skill by default, or one MCP server for clients without skills.
 - A shared background daemon keeps upstream connections open between calls.
+- Webhooks from your services, stored in a local event queue that an AI or a script can read at its own pace.
 - Read-only, allow and deny rules, a local call log and a local web UI.
 
 ## Install

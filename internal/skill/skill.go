@@ -25,6 +25,7 @@ type Account struct {
 	Name        string
 	Description string
 	ReadOnly    bool
+	Webhook     bool
 }
 
 type Tool struct {
@@ -41,6 +42,7 @@ const (
 	noServicesDescription = "Access the user's services and accounts through the pandora CLI. No services are connected yet. Use it when the user asks to connect a service, an API or an account: MCP servers, OpenAPI APIs or any command line tool."
 	descriptionPrefix     = "Access the user's connected services and accounts through the pandora CLI: "
 	descriptionSuffix     = ". Use it whenever the user asks about these services, their data or actions in them, or asks to connect another service or account."
+	eventsSuffix          = ". Use it whenever the user asks about these services, their data, actions in them or the events they sent, like new comments or messages, or asks to connect another service or account."
 )
 
 func Description(doc Doc) string {
@@ -48,16 +50,20 @@ func Description(doc Doc) string {
 	if len(services) == 0 {
 		return noServicesDescription
 	}
+	suffix := descriptionSuffix
+	if hasWebhooks(services) {
+		suffix = eventsSuffix
+	}
 	full := make([]string, len(services))
 	compact := make([]string, len(services))
 	for i, service := range services {
 		full[i] = serviceWithAccounts(service)
 		compact[i] = serviceWithAccountCount(service)
 	}
-	if description := descriptionPrefix + strings.Join(full, ", ") + descriptionSuffix; len(description) <= MaxDescription {
+	if description := descriptionPrefix + strings.Join(full, ", ") + suffix; len(description) <= MaxDescription {
 		return description
 	}
-	if description := descriptionPrefix + strings.Join(compact, ", ") + descriptionSuffix; len(description) <= MaxDescription {
+	if description := descriptionPrefix + strings.Join(compact, ", ") + suffix; len(description) <= MaxDescription {
 		return description
 	}
 	best := ""
@@ -71,7 +77,7 @@ func Description(doc Doc) string {
 				list += fmt.Sprintf(" and %d more services", len(compact)-included)
 			}
 		}
-		description := descriptionPrefix + list + descriptionSuffix
+		description := descriptionPrefix + list + suffix
 		if len(description) <= MaxDescription {
 			best = description
 		}

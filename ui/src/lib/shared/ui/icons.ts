@@ -1,5 +1,15 @@
 export type IconName =
-	'plus' | 'refresh' | 'check' | 'alert' | 'x' | 'menu' | 'chevron' | 'more' | 'login' | 'search';
+	| 'plus'
+	| 'refresh'
+	| 'check'
+	| 'alert'
+	| 'x'
+	| 'menu'
+	| 'chevron'
+	| 'more'
+	| 'login'
+	| 'search'
+	| 'copy';
 
 export type IconShape =
 	| { type: 'path'; d: string }
@@ -44,5 +54,9 @@ export const icons: Record<IconName, IconShape[]> = {
 	search: [
 		{ type: 'circle', cx: 11, cy: 11, r: 8 },
 		{ type: 'path', d: 'm21 21-4.3-4.3' }
+	],
+	copy: [
+		{ type: 'rect', x: 9, y: 9, width: 12, height: 12, rx: 2 },
+		{ type: 'path', d: 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1' }
 	]
 };

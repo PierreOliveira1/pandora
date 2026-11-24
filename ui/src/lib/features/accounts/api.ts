@@ -5,7 +5,8 @@ import type {
 	AddAccountResponse,
 	LoginResult,
 	Overview,
-	StatusInfo
+	StatusInfo,
+	WebhookInfo
 } from './types.ts';
 
 export function loadOverview(): Promise<Overview> {
@@ -14,6 +15,14 @@ export function loadOverview(): Promise<Overview> {
 
 export function loadStatus(ref?: string): Promise<StatusInfo[]> {
 	return api.getStatus(ref);
+}
+
+export function loadWebhooks(): Promise<WebhookInfo[]> {
+	return api.getWebhooks();
+}
+
+export function removeWebhook(service: string, account: string): Promise<void> {
+	return api.deleteWebhook(service, account);
 }
 
 export function addAccount(input: AddAccountInput): Promise<AddAccountResponse> {

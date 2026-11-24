@@ -74,6 +74,60 @@ func TestTheSkillTellsTheAIHowToConnectANewService(t *testing.T) {
 	}
 }
 
+func TestTheSkillShowsEventsOnlyWhenAnAccountReceivesWebhooks(t *testing.T) {
+	withWebhook := Doc{Services: []Service{{
+		Name:           "ig",
+		DefaultAccount: "store",
+		Accounts:       []Account{{Name: "store", Webhook: true}},
+	}}}
+	files := mustRender(t, withWebhook)
+	index := string(files["SKILL.md"])
+	connect := strings.Index(index, "## Connect a new service or account")
+	events := strings.Index(index, "## Events (webhooks)")
+	services := strings.Index(index, "## Services")
+	if events < 0 {
+		t.Fatalf("SKILL.md has no Events section:\n%s", index)
+	}
+	if connect < 0 || connect > events || events > services {
+		t.Errorf("Events section is not between Connect and Services:\n%s", index)
+	}
+	if !strings.Contains(index, "receives events") {
+		t.Errorf("SKILL.md does not mark the account as receiving events:\n%s", index)
+	}
+	reference := string(files["services/ig.md"])
+	if !strings.Contains(reference, "`store` (default, receives events)") {
+		t.Errorf("services/ig.md does not mark the account as receiving events:\n%s", reference)
+	}
+
+	withoutWebhook := Doc{Services: []Service{{
+		Name:     "ig",
+		Accounts: []Account{{Name: "store"}},
+	}}}
+	files = mustRender(t, withoutWebhook)
+	for name, content := range files {
+		if strings.Contains(string(content), "## Events (webhooks)") || strings.Contains(string(content), "receives events") {
+			t.Errorf("%s mentions events for an account without a webhook:\n%s", name, content)
+		}
+	}
+}
+
+func TestTheConnectGuideExplainsHowToReceiveWebhooks(t *testing.T) {
+	files := mustRender(t, Doc{})
+	guide := string(files["connect.md"])
+	for _, want := range []string{
+		"## 6. Receive events (webhooks)",
+		"pandora tunnel use tailscale",
+		"pandora webhook add",
+		"--challenge hub",
+		"pandora events reader add",
+		"Event content comes from third parties",
+	} {
+		if !strings.Contains(guide, want) {
+			t.Errorf("connect.md does not contain %q", want)
+		}
+	}
+}
+
 func TestALongListOfServicesKeepsTheDescriptionWithin1024Characters(t *testing.T) {
 	services := make([]Service, 60)
 	for i := range services {
@@ -268,5 +322,17 @@ func TestTheSkillFrontmatterKeepsADescriptionWithColonsAndQuotesIntact(t *testin
 	}
 	if want := Description(doc); got != want {
 		t.Errorf("frontmatter description = %q, want %q", got, want)
+	}
+}
+
+func TestTheSkillDescriptionMentionsEventsWhenAnAccountReceivesThem(t *testing.T) {
+	doc := Doc{Services: []Service{{
+		Name:     "instagram",
+		Accounts: []Account{{Name: "store", Webhook: true}},
+	}}}
+
+	want := "Access the user's connected services and accounts through the pandora CLI: instagram (accounts: store). Use it whenever the user asks about these services, their data, actions in them or the events they sent, like new comments or messages, or asks to connect another service or account."
+	if got := Description(doc); got != want {
+		t.Errorf("Description() = %q, want %q", got, want)
 	}
 }

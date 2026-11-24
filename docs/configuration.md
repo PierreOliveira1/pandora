@@ -33,6 +33,7 @@ The home directory comes from `HOME`; when it is empty, Pandora asks the operati
 | `state/calls.jsonl` | Call log. Rotates to `calls.jsonl.1` at 10 MB. |
 | `state/logs/daemon.log` | Output of the background daemon. |
 | `state/logs/<service>__<account>.log` | stderr of a local MCP server. |
+| `state/events/` | Webhook event queue. See [Webhooks](webhooks.md). |
 | `state/locks/<service>__<account>.lock` | Lock used while refreshing an OAuth token. |
 | `state/pandora.sock` | Daemon socket. If the path is too long for a Unix socket, it goes under the system temp directory. |
 
@@ -129,6 +130,7 @@ type = "integer"
 | `allow` | Patterns of tools that may run. |
 | `deny` | Patterns of tools that may never run. |
 | `credentials_id` | Identifier Pandora uses to tell account generations apart. Leave it alone. |
+| `webhook` | Webhook settings of this account. See below. |
 
 ### Command tool fields
 
@@ -143,6 +145,56 @@ type = "integer"
 | `params.<name>.description` | Description shown to the AI. |
 | `readonly` | Marks the tool as read-only. |
 | `timeout_sec` | Timeout in seconds. Empty means 60. |
+
+### Webhooks and event readers
+
+A webhook belongs to an account. The receiver settings are global:
+
+```toml
+[webhooks]
+port = 43123
+tunnel = "tailscale"
+public_url = "https://machine.tailnet.ts.net/pandora"
+
+[[readers]]
+name = "worker"
+service = "instagram"
+account = "store"
+topic = "comments"
+command = ["/Users/me/scripts/reply.sh"]
+timeout_sec = 60
+
+[services.instagram.accounts.store.webhook]
+id = "0123456789abcdef0123456789abcdef"
+style = "hmac"
+challenge = "hub"
+topic_fields = ["entry.0.changes.0.field", "entry.0.messaging"]
+```
+
+| `[webhooks]` key | Meaning |
+| --- | --- |
+| `port` | Fixed local port of the receiver. Pandora chooses one when the first webhook is added. |
+| `tunnel` | `tailscale` or `url`. Empty means no tunnel. |
+| `public_url` | Public base used in the Callback URLs. |
+
+| `[[readers]]` key | Meaning |
+| --- | --- |
+| `name` | Reader name. `ai` and `default` are reserved. |
+| `service`, `account`, `topic` | Optional filter. Empty means any. |
+| `command` | Program and arguments. The program receives the event as JSON on stdin. |
+| `timeout_sec` | Timeout in seconds. Empty means 60. |
+
+| Webhook key | Meaning |
+| --- | --- |
+| `id` | Random id in the callback path. |
+| `style` | `hmac`, `token` or `none`. |
+| `challenge` | `hub` when the service uses the hub challenge. |
+| `signature_header`, `signature_prefix`, `encoding` | HMAC details. Empty uses `X-Hub-Signature-256`, `sha256=` and `hex`. |
+| `token_header`, `token_query` | Where a `token` style delivery carries its token. |
+| `topic_header`, `topic_fields` | Where the topic comes from: a header or a dotted JSON path. |
+| `id_header` | Header with the delivery id, used for deduplication. |
+
+The signing secret and the verify token live in the secret store, never in this file.
 
 ## Secrets
 

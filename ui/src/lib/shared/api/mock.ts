@@ -4,12 +4,14 @@ import type {
 	AccountView,
 	AddAccountInput,
 	AuthMode,
+	AutostartInfo,
 	CallToolInput,
 	CallToolResult,
 	CommandParam,
 	CommandToolInput,
 	CommandToolView,
 	DoctorCheck,
+	EventView,
 	InstallReport,
 	IntegrationView,
 	JsonSchema,
@@ -22,7 +24,8 @@ import type {
 	StatusInfo,
 	ToolCatalog,
 	ToolContent,
-	ToolInfo
+	ToolInfo,
+	WebhookInfo
 } from './types.ts';
 
 const MOCK_VERSION = '0.1.0';
@@ -99,6 +102,28 @@ function seedServices(): ServiceView[] {
 			]
 		},
 		{
+			name: 'instagram',
+			kind: 'openapi',
+			description: 'Instagram comments, messages and publishing.',
+			auth: 'oauth',
+			expose: 'compact',
+			url: 'https://graph.instagram.com',
+			spec: 'https://graph.instagram.com/openapi.json',
+			default_account: 'store',
+			tools_known: true,
+			tool_count: 2,
+			accounts: [
+				{
+					name: 'store',
+					description: 'The Trono Instagram account.',
+					default: true,
+					readonly: false,
+					allow: [],
+					deny: []
+				}
+			]
+		},
+		{
 			name: 'github',
 			kind: 'mcp-stdio',
 			description: 'Repositories, issues and pull requests.',
@@ -116,6 +141,14 @@ function seedServices(): ServiceView[] {
 					readonly: false,
 					allow: [],
 					deny: ['delete_*']
+				},
+				{
+					name: 'work',
+					description: 'Work repositories.',
+					default: false,
+					readonly: false,
+					allow: [],
+					deny: []
 				}
 			]
 		},
@@ -308,6 +341,29 @@ function seedCatalogs(): Map<string, ToolCatalog> {
 		]
 	});
 
+	catalogs.set('instagram', {
+		fetched_at: fetchedAt,
+		tools: [
+			makeTool(
+				'get_comments',
+				'List recent comments on the account media.',
+				{ media_id: { type: 'string', description: 'Instagram media id.' } },
+				[],
+				{ readOnlyHint: true }
+			),
+			makeTool(
+				'reply_to_comment',
+				'Reply to a comment on the account media.',
+				{
+					comment_id: { type: 'string', description: 'Comment to reply to.' },
+					message: { type: 'string', description: 'Reply text.' }
+				},
+				['comment_id', 'message'],
+				{ readOnlyHint: false }
+			)
+		]
+	});
+
 	catalogs.set('github', {
 		fetched_at: fetchedAt,
 		tools: [
@@ -488,6 +544,204 @@ function seedLogs(): LogEntry[] {
 	return entries.sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
 }
 
+function seedWebhooks(): WebhookInfo[] {
+	if (mockMode === 'empty' || mockMode === 'webhooks-empty') return [];
+
+	const now = Date.now();
+	const lastEventAt =
+		mockMode === 'events-empty' ? undefined : new Date(now - 2 * 60_000).toISOString();
+
+	return [
+		{
+			ref: 'instagram/store',
+			style: 'hmac',
+			challenge: 'hub',
+			url: 'https://mac.tail1234.ts.net/pandora/hooks/instagram/store/8f4c1c7a2d8b4e9f9a61c0d8b7e3f210',
+			local_url: 'http://127.0.0.1:54645/hooks/instagram/store/8f4c1c7a2d8b4e9f9a61c0d8b7e3f210',
+			last_event_at: lastEventAt
+		},
+		{
+			ref: 'github/work',
+			style: 'hmac',
+			local_url: 'http://127.0.0.1:54645/hooks/github/work/4b7d5c1e9a2f4c8d8e3b7a1f6c2d9e40'
+		}
+	];
+}
+
+function seedEvents(): EventView[] {
+	if (mockMode === 'empty' || mockMode === 'webhooks-empty' || mockMode === 'events-empty') {
+		return [];
+	}
+
+	const now = Date.now();
+	const at = (minutes: number): string => new Date(now - minutes * 60_000).toISOString();
+
+	return [
+		{
+			seq: 12,
+			id: 'evt_01jcf7k4n8q2r5t9w3x6z1a4b7',
+			received_at: at(2),
+			service: 'instagram',
+			account: 'store',
+			topic: 'comments',
+			headers: {
+				'Content-Type': 'application/json',
+				'User-Agent': 'facebookexternalua'
+			},
+			payload: {
+				object: 'instagram',
+				entry: [
+					{
+						id: '17841400000000000',
+						time: 1790006400,
+						changes: [
+							{
+								field: 'comments',
+								value: {
+									id: '17865432109876543',
+									text: 'This is exactly the reel I needed. I have been looking for a lightweight jacket like this for months, and the color is perfect. Do you ship to Lisbon, and how long does delivery usually take?',
+									from: { id: '17841400000009999', username: 'trono_fan' },
+									media: {
+										id: '17890000000000001',
+										media_product_type: 'REELS'
+									},
+									created_time: '2026-11-24T12:58:00+0000'
+								}
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			seq: 11,
+			id: 'evt_01jcf7m2p4r6s8u1v3w5x7y9z2',
+			received_at: at(7),
+			service: 'instagram',
+			account: 'store',
+			topic: 'messaging',
+			headers: {
+				'Content-Type': 'application/json',
+				'User-Agent': 'facebookexternalua'
+			},
+			payload: {
+				object: 'instagram',
+				entry: [
+					{
+						id: '17841400000000000',
+						time: 1790006100,
+						messaging: [
+							{
+								sender: { id: '17841400000008888' },
+								recipient: { id: '17841400000000000' },
+								timestamp: 1790006100,
+								message: {
+									mid: 'mid.1790006100.9f4c2a',
+									text: 'Do you have the jacket in a medium?'
+								}
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			seq: 10,
+			id: 'evt_01jcf7n8q1s3t5u7v9w1x3y5z7',
+			received_at: at(14),
+			service: 'instagram',
+			account: 'store',
+			topic: 'mentions',
+			headers: {
+				'Content-Type': 'application/json',
+				'User-Agent': 'facebookexternalua'
+			},
+			payload: {
+				object: 'instagram',
+				entry: [
+					{
+						id: '17841400000000000',
+						time: 1790005300,
+						changes: [
+							{
+								field: 'mentions',
+								value: {
+									media_id: '17890000000000002',
+									comment_id: '17865432109870001'
+								}
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			seq: 9,
+			id: 'evt_01jcf7p2r4t6u8v1w3x5y7z9a2',
+			received_at: at(26),
+			service: 'instagram',
+			account: 'store',
+			topic: 'comments',
+			headers: {
+				'Content-Type': 'application/json',
+				'User-Agent': 'facebookexternalua'
+			},
+			payload:
+				'New comment from @trono_fan: “Where can I buy this?” The comment is awaiting a reply.'
+		},
+		{
+			seq: 8,
+			id: 'evt_01jcf7q6s8u2v4w6x8y1z3a5b7',
+			received_at: at(41),
+			service: 'instagram',
+			account: 'store',
+			topic: 'messaging',
+			headers: {
+				'Content-Type': 'application/json',
+				'User-Agent': 'facebookexternalua'
+			},
+			payload: {
+				object: 'instagram',
+				entry: [
+					{
+						id: '17841400000000000',
+						messaging: [
+							{
+								sender: { id: '17841400000007777' },
+								message: {
+									mid: 'mid.1790004600.2a8d4f',
+									text: 'Can I get the link for the black version?'
+								}
+							}
+						]
+					}
+				]
+			}
+		},
+		{
+			seq: 7,
+			id: 'evt_01jcf7r1t3v5w7x9y2z4a6b8c1',
+			received_at: at(58),
+			service: 'instagram',
+			account: 'store',
+			topic: 'comments',
+			payload: {
+				object: 'instagram',
+				entry: [
+					{
+						changes: [
+							{
+								field: 'comments',
+								value: { text: 'Beautiful drop!' }
+							}
+						]
+					}
+				]
+			}
+		}
+	];
+}
+
 function doctorChecks(offline: boolean): DoctorCheck[] {
 	const base: DoctorCheck[] = [
 		{ name: 'Config file', ok: true, info: '~/.config/pandora/config.toml' },
@@ -502,8 +756,25 @@ function doctorChecks(offline: boolean): DoctorCheck[] {
 
 	if (offline) return base;
 
+	const webhookChecks: DoctorCheck[] =
+		mockMode === 'empty' || mockMode === 'webhooks-empty'
+			? []
+			: [
+					{
+						name: 'tunnel',
+						ok: true,
+						info: 'https://mac.tail1234.ts.net/pandora'
+					},
+					{
+						name: 'webhook receiver',
+						ok: true,
+						info: '127.0.0.1:54645'
+					}
+				];
+
 	return [
 		...base,
+		...webhookChecks,
 		{ name: 'todoist/personal', ok: true, info: 'Connected · 3 tools' },
 		{ name: 'meta/clothing-store', ok: true, info: 'Connected · 4 tools' },
 		{ name: 'ops/local', ok: true, info: 'Connected · 2 tools' }
@@ -514,6 +785,12 @@ const mockMode =
 	typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('mock');
 
 const services: ServiceView[] = mockMode === 'empty' ? [] : seedServices();
+const webhooks: WebhookInfo[] = seedWebhooks();
+const events: EventView[] = seedEvents();
+let autostart: AutostartInfo = {
+	supported: mockMode !== 'autostart-unsupported',
+	enabled: false
+};
 const statuses = new Map<string, StatusInfo>();
 const logins = new Map<string, MockLogin>();
 let loginSequence = 0;
@@ -547,12 +824,24 @@ if (mockMode !== 'empty') {
 		tools: 4,
 		latency_ms: 141
 	});
+	setStatus('instagram/store', {
+		ok: true,
+		needs_login: false,
+		tools: 2,
+		latency_ms: 166
+	});
 	setStatus('github/company', {
 		ok: false,
 		needs_login: false,
 		tools: 0,
 		latency_ms: 97,
 		error: 'spawn npx: connect: connection refused'
+	});
+	setStatus('github/work', {
+		ok: true,
+		needs_login: false,
+		tools: 2,
+		latency_ms: 104
 	});
 	setStatus('billing-api/prod', {
 		ok: true,
@@ -1357,6 +1646,39 @@ export async function mockRequest(
 		return overviewSnapshot();
 	}
 
+	if (method === 'GET' && url.pathname === '/api/webhooks') {
+		await delay(250);
+		return structuredClone(webhooks);
+	}
+
+	if (method === 'GET' && url.pathname === '/api/events') {
+		await delay(300);
+		const service = url.searchParams.get('service') ?? '';
+		const account = url.searchParams.get('account') ?? '';
+		const topic = url.searchParams.get('topic') ?? '';
+		const rawLimit = Number(url.searchParams.get('limit') ?? '100');
+		const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, rawLimit), 100) : 100;
+		const filtered = events.filter((event) => {
+			if (service && event.service !== service) return false;
+			if (account && event.account !== account) return false;
+			if (topic && event.topic !== topic) return false;
+			return true;
+		});
+		return structuredClone(filtered.slice(0, limit));
+	}
+
+	if (method === 'GET' && url.pathname === '/api/autostart') {
+		await delay(200);
+		return { ...autostart };
+	}
+
+	if (method === 'PUT' && url.pathname === '/api/autostart') {
+		await delay(300);
+		const input = (body ?? {}) as { enabled?: unknown };
+		autostart = { ...autostart, enabled: Boolean(input.enabled) };
+		return { ...autostart };
+	}
+
 	if (method === 'GET' && url.pathname === '/api/status') {
 		await delay(1500);
 		const result: StatusInfo[] = [];
@@ -1384,6 +1706,21 @@ export async function mockRequest(
 
 		const ref = url.searchParams.get('ref');
 		return ref ? result.filter((status) => status.ref === ref) : result;
+	}
+
+	if (
+		method === 'DELETE' &&
+		segments[0] === 'api' &&
+		segments[1] === 'accounts' &&
+		segments.length === 5 &&
+		segments[4] === 'webhook'
+	) {
+		await delay(300);
+		const ref = refOf(segments[2], segments[3]);
+		const index = webhooks.findIndex((webhook) => webhook.ref === ref);
+		if (index === -1) throw new ApiError(`Webhook ${ref} does not exist.`, 404);
+		webhooks.splice(index, 1);
+		return { ok: true };
 	}
 
 	if (method === 'POST' && url.pathname === '/api/accounts') {

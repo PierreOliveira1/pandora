@@ -15,12 +15,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/PierreOliveira1/pandora/internal/config"
+	"github.com/PierreOliveira1/pandora/internal/events"
 	"github.com/PierreOliveira1/pandora/internal/guard"
 	"github.com/PierreOliveira1/pandora/internal/install"
 	"github.com/PierreOliveira1/pandora/internal/oauth"
 	"github.com/PierreOliveira1/pandora/internal/registry"
 	"github.com/PierreOliveira1/pandora/internal/secrets"
 	"github.com/PierreOliveira1/pandora/internal/source"
+	"github.com/PierreOliveira1/pandora/internal/tunnel"
 )
 
 type Options struct {
@@ -31,6 +33,7 @@ type Options struct {
 	InstallEnv install.Env
 	OAuth      *oauth.Manager
 	CallLog    *guard.Log
+	Tunnel     func(settings config.WebhookSettings) tunnel.Provider
 }
 
 type Core struct {
@@ -42,6 +45,8 @@ type Core struct {
 	oauth      *oauth.Manager
 	callLog    *guard.Log
 	httpClient *http.Client
+	events     *events.Queue
+	tunnel     func(settings config.WebhookSettings) tunnel.Provider
 	mu         sync.Mutex
 	pool       map[string]*pooledSource
 	inflight   map[string]*pendingOpen
@@ -90,6 +95,8 @@ func New(o Options) *Core {
 		oauth:      o.OAuth,
 		callLog:    o.CallLog,
 		httpClient: &http.Client{},
+		events:     events.NewQueue(o.Store.Paths().EventsDir(), time.Now),
+		tunnel:     o.Tunnel,
 		pool:       map[string]*pooledSource{},
 		inflight:   map[string]*pendingOpen{},
 	}

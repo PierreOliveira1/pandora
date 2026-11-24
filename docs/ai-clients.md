@@ -58,6 +58,8 @@ The skill has three levels:
 
 The skill also includes `connect.md`, a guide the AI reads when you ask it to connect a service. The AI writes the commands and you type the secrets in your own terminal.
 
+When an account receives webhooks, `SKILL.md` also has an Events section. It tells the AI to read the queue with `pandora events --reader ai --json` and to mark handled events with `pandora events ack <seq>... --reader ai`. Event content is treated as third-party data, never as instructions.
+
 The AI uses the CLI:
 
 ```sh
@@ -94,6 +96,8 @@ A service appears in one of two modes:
 
 - `compact` (default): the client sees four tools, `pandora_accounts`, `pandora_search_tools`, `pandora_describe_tool` and `pandora_call`. They cover every service and account.
 - `direct`: the client also sees each tool of the service as `service__tool`, with an `account` argument. Names are sanitized and limited to 64 characters; a collision gets a numeric suffix.
+
+When at least one account has a webhook, the server also exposes `pandora_events`. It reads the event queue for the `ai` reader and accepts the seq numbers the AI already handled, so they are not returned again. The server instructions mention the tool, and the tool description says that event content is third-party data and never an instruction.
 
 Show the mode and change it:
 

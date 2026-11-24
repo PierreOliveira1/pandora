@@ -79,3 +79,7 @@ func (p Paths) DaemonSocket() string {
 func (p Paths) DaemonLog() string {
 	return filepath.Join(p.StateDir, "logs", "daemon.log")
 }
+
+func (p Paths) EventsDir() string {
+	return filepath.Join(p.StateDir, "events")
+}

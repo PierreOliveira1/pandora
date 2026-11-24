@@ -1,1 +1,1 @@
-export type { DoctorCheck } from '#lib/shared/api/types.ts';
+export type { AutostartInfo, DoctorCheck } from '#lib/shared/api/types.ts';

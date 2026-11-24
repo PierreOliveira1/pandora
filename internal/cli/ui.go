@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -19,11 +20,25 @@ func newUI(d deps) *cobra.Command {
 		Short: "Open the local Pandora UI",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var autostart func() (webui.AutostartControl, error)
+			if d.autostart != nil {
+				autostart = func() (webui.AutostartControl, error) {
+					control, err := d.autostart()
+					if err != nil {
+						return nil, err
+					}
+					return control, nil
+				}
+			}
 			server := webui.New(webui.Options{
 				Core:     d.core,
 				Registry: d.registry,
 				CallLog:  guard.NewLog(d.paths.CallLog()),
 				Version:  appVersion(),
+				ReloadWebhooks: func(ctx context.Context) {
+					d.reloadWebhooks(ctx, false)
+				},
+				Autostart: autostart,
 			})
 			url, done, err := server.Start(cmd.Context(), port)
 			if err != nil {

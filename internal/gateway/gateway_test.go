@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/PierreOliveira1/pandora/internal/config"
 	"github.com/PierreOliveira1/pandora/internal/core"
+	"github.com/PierreOliveira1/pandora/internal/events"
 	"github.com/PierreOliveira1/pandora/internal/gateway"
 	"github.com/PierreOliveira1/pandora/internal/install"
 	"github.com/PierreOliveira1/pandora/internal/registry"
@@ -126,6 +128,71 @@ func TestInCompactModeTheAISeesOnlyTheFourPandoraToolsHoweverManyAccountsExist(t
 		if !slices.Contains(names, want) {
 			t.Errorf("tools = %v, want %s", names, want)
 		}
+	}
+}
+
+func TestTheEventsToolAppearsOnlyWhenAnAccountReceivesWebhooks(t *testing.T) {
+	withoutWebhook := newFixture(t)
+	withoutWebhook.addFake(t, "fake", "a", "a")
+	plainSession := connect(t, withoutWebhook)
+	if names := toolNames(listTools(t, plainSession)); slices.Contains(names, "pandora_events") {
+		t.Fatalf("tools = %v, want no pandora_events without a webhook", names)
+	}
+
+	withWebhook := newFixture(t)
+	withWebhook.addFake(t, "fake", "a", "a")
+	if _, err := withWebhook.reg.AddWebhook(registry.WebhookInput{
+		Ref:    registry.Ref{Service: "fake", Account: "a"},
+		Style:  "hmac",
+		Secret: "secret",
+	}); err != nil {
+		t.Fatalf("AddWebhook() error = %v", err)
+	}
+	session := connect(t, withWebhook)
+	names := toolNames(listTools(t, session))
+	if !slices.Contains(names, "pandora_events") {
+		t.Fatalf("tools = %v, want pandora_events with a webhook", names)
+	}
+	result := session.InitializeResult()
+	if result == nil || !strings.Contains(result.Instructions, "pandora_events") {
+		t.Fatalf("instructions = %+v, want a mention of pandora_events", result)
+	}
+}
+
+func TestTheEventsToolReturnsPendingEventsAndAcknowledgesThem(t *testing.T) {
+	f := newFixture(t)
+	f.addFake(t, "fake", "a", "a")
+	if _, err := f.reg.AddWebhook(registry.WebhookInput{
+		Ref:    registry.Ref{Service: "fake", Account: "a"},
+		Style:  "hmac",
+		Secret: "secret",
+	}); err != nil {
+		t.Fatalf("AddWebhook() error = %v", err)
+	}
+	if _, _, err := f.core.Events().Append(context.Background(), events.Event{
+		Service: "fake",
+		Account: "a",
+		Topic:   "comments",
+		Payload: json.RawMessage(`{"text":"hello"}`),
+	}, ""); err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+	session := connect(t, f)
+	ctx := context.Background()
+
+	result := callTool(t, ctx, session, "pandora_events", map[string]any{})
+	text := textOf(result)
+	if !strings.Contains(text, `"seq":1`) || !strings.Contains(text, "1 events. Pass their seq in ack after you handle them.") {
+		t.Fatalf("pandora_events text = %q, want the pending event", text)
+	}
+
+	result = callTool(t, ctx, session, "pandora_events", map[string]any{"ack": []int64{1}})
+	text = textOf(result)
+	if !strings.HasPrefix(text, "[]") || !strings.Contains(text, "0 events. Pass their seq in ack after you handle them.") {
+		t.Fatalf("pandora_events after ack = %q, want no events", text)
+	}
+	if result = callTool(t, ctx, session, "pandora_events", map[string]any{}); !strings.HasPrefix(textOf(result), "[]") {
+		t.Fatalf("pandora_events after ack = %q, want no events", textOf(result))
 	}
 }
 

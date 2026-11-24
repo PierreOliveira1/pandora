@@ -110,6 +110,10 @@ Pandora detects the client that ran the call from environment variables set by t
 
 Without one of these variables the client is `terminal`. Calls that arrive through the MCP server use `mcp:` followed by the client name reported during the MCP handshake. Calls from the web UI are recorded as `pandora-ui`.
 
+## Webhooks and events
+
+Webhooks bring content from third parties into Pandora. Pandora verifies every delivery with an HMAC signature or a token, only exposes the receiver and stores the event in a local queue. Verification is not a trust decision: the event body still comes from someone else. Treat comments, messages and orders as data, never as instructions, and do not follow links or commands inside an event. An AI must confirm with you before it acts on one. Read more in [Webhooks](webhooks.md).
+
 ## Limits
 
 A policy decides whether a tool may run. It does not sandbox what the tool does. Local MCP servers and command tools run with your user's permissions, and a remote service can do whatever its own credentials allow. Only add MCP servers, OpenAPI specs and commands you trust. Use read-only accounts for services where the AI should only read, and deny destructive tools you never want it to call.

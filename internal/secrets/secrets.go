@@ -36,6 +36,14 @@ func OAuthTokenKey(service, account string) string {
 	return service + "/" + account + "/oauth/token"
 }
 
+func WebhookSigningKey(service, account string) string {
+	return service + "/" + account + "/webhook/signing"
+}
+
+func WebhookVerifyTokenKey(service, account string) string {
+	return service + "/" + account + "/webhook/verify-token"
+}
+
 func OAuthClientKey(service string) string {
 	return service + "/_service/oauth/client"
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { ActionMenu, Button, Icon, Pill, Spinner } from '#lib/shared/ui/index.ts';
-	import type { AccountView, AuthMode, StatusInfo } from '../types.ts';
+	import { ActionMenu, Button, Icon, Pill, Spinner, showToast } from '#lib/shared/ui/index.ts';
+	import { formatRelativeTime } from '#lib/shared/utils/format.ts';
+	import type { AccountView, AuthMode, StatusInfo, WebhookInfo } from '../types.ts';
 
 	type MenuItem = {
 		id: string;
@@ -21,7 +22,9 @@
 		onRemove,
 		onSetDefault,
 		onLogout,
-		onRules
+		onRules,
+		webhook,
+		onRemoveWebhook
 	}: {
 		serviceName: string;
 		account: AccountView;
@@ -35,6 +38,8 @@
 		onSetDefault: () => void;
 		onLogout: () => void;
 		onRules: () => void;
+		webhook?: WebhookInfo;
+		onRemoveWebhook: () => void;
 	} = $props();
 
 	let expanded = $state(false);
@@ -42,6 +47,12 @@
 	const ref = $derived(`${serviceName}/${account.name}`);
 	const hasError = $derived(Boolean(status?.error));
 	const needsLogin = $derived(Boolean(status?.needs_login) && !status?.ok);
+	const lastEventLabel = $derived.by(() => {
+		if (!webhook) return '';
+		if (!webhook.last_event_at) return 'No events yet';
+		const relative = formatRelativeTime(webhook.last_event_at);
+		return relative ? `Last event ${relative}` : 'No events yet';
+	});
 
 	const menuItems = $derived.by((): MenuItem[] => {
 		const items: MenuItem[] = [];
@@ -53,6 +64,14 @@
 		items.push({ id: 'rename', label: 'Rename', onselect: onRename });
 		if (auth === 'oauth') {
 			items.push({ id: 'logout', label: 'Log out', onselect: onLogout });
+		}
+		if (webhook) {
+			items.push({
+				id: 'remove-webhook',
+				label: 'Remove webhook',
+				tone: 'danger',
+				onselect: onRemoveWebhook
+			});
 		}
 		items.push({ id: 'remove', label: 'Remove', tone: 'danger', onselect: onRemove });
 
@@ -66,6 +85,16 @@
 	function statusTitle(): string | undefined {
 		return status?.error;
 	}
+
+	async function copyCallbackUrl(): Promise<void> {
+		if (!webhook?.url) return;
+		try {
+			await navigator.clipboard.writeText(webhook.url);
+			showToast('Callback URL copied.');
+		} catch {
+			showToast('Could not copy the callback URL.', 'error');
+		}
+	}
 </script>
 
 {#snippet accountInfo()}
@@ -76,6 +105,9 @@
 		{/if}
 		{#if account.readonly}
 			<Pill tone="warning">read-only</Pill>
+		{/if}
+		{#if webhook}
+			<Pill>webhook</Pill>
 		{/if}
 		{#if account.allow.length > 0 || account.deny.length > 0}
 			<Pill>rules</Pill>
@@ -167,6 +199,40 @@
 			<ActionMenu label={`Actions for ${ref}`} items={menuItems} />
 		</div>
 	</div>
+
+	{#if webhook}
+		<div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+			{#if webhook.url}
+				<div class="flex min-w-0 flex-1 items-center gap-2">
+					<span class="shrink-0 text-xs text-zinc-500">Callback URL</span>
+					<span
+						class="min-w-0 truncate font-mono text-xs text-zinc-600 dark:text-zinc-300"
+						title={webhook.url}
+					>
+						{webhook.url}
+					</span>
+				</div>
+				<div class="flex items-center justify-between gap-3 sm:justify-end">
+					<span class="text-xs text-zinc-500">{lastEventLabel}</span>
+					<Button
+						variant="secondary"
+						icon="copy"
+						class="min-h-11 shrink-0 px-3"
+						onclick={() => void copyCallbackUrl()}
+					>
+						Copy
+					</Button>
+				</div>
+			{:else}
+				<p class="min-w-0 flex-1 text-xs text-zinc-500">
+					No public address yet. Run <code class="font-mono text-zinc-600 dark:text-zinc-400">
+						pandora tunnel use tailscale
+					</code>.
+				</p>
+				<span class="text-xs text-zinc-500">{lastEventLabel}</span>
+			{/if}
+		</div>
+	{/if}
 
 	{#if hasError && expanded}
 		<div

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ActionMenu, Pill } from '#lib/shared/ui/index.ts';
 	import { serviceKindLabel } from '../types.ts';
-	import type { AccountView, ServiceView, StatusInfo } from '../types.ts';
+	import type { AccountView, ServiceView, StatusInfo, WebhookInfo } from '../types.ts';
 	import AccountRow from './AccountRow.svelte';
 
 	type MenuItem = {
@@ -23,7 +23,9 @@
 		onRemoveAccount,
 		onSetDefault,
 		onLogout,
-		onRules
+		onRules,
+		webhooks,
+		onRemoveWebhook
 	}: {
 		service: ServiceView;
 		statuses: Record<string, StatusInfo>;
@@ -37,6 +39,8 @@
 		onSetDefault: (account: AccountView) => void;
 		onLogout: (account: AccountView) => void;
 		onRules: (account: AccountView) => void;
+		webhooks: Record<string, WebhookInfo>;
+		onRemoveWebhook: (account: AccountView) => void;
 	} = $props();
 
 	const toolsLabel = $derived(
@@ -94,6 +98,8 @@
 						onSetDefault={() => onSetDefault(account)}
 						onLogout={() => onLogout(account)}
 						onRules={() => onRules(account)}
+						webhook={webhooks[ref]}
+						onRemoveWebhook={() => onRemoveWebhook(account)}
 					/>
 				</li>
 			{/each}

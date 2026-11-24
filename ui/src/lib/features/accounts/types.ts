@@ -10,7 +10,8 @@ export type {
 	Overview,
 	ServiceKind,
 	ServiceView,
-	StatusInfo
+	StatusInfo,
+	WebhookInfo
 } from '#lib/shared/api/types.ts';
 
 export const serviceKindLabels: Record<ServiceKind, string> = {

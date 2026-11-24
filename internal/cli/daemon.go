@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -64,7 +65,12 @@ func newDaemon(d deps) *cobra.Command {
 				return fmt.Errorf("--idle must be positive")
 			}
 			server := daemon.NewServer(d.core, buildID(), idle)
-			return server.Serve(cmd.Context(), d.paths.DaemonSocket())
+			err := server.Serve(cmd.Context(), d.paths.DaemonSocket())
+			if errors.Is(err, daemon.ErrAlreadyRunning) {
+				fmt.Fprintln(d.stderr, "pandora daemon is already running")
+				return nil
+			}
+			return err
 		},
 	}
 

@@ -1,6 +1,6 @@
 # Architecture
 
-This page is for contributors. It maps the code, follows one `pandora call` from the CLI to a service, and explains where state lives. Read [AGENTS](../AGENTS.md) for the rules that keep the layers apart.
+This page is for contributors. It maps the code, follows one `pandora call` and one webhook delivery, and explains where state lives. Read [AGENTS](../AGENTS.md) for the rules that keep the layers apart.
 
 ## Layout
 
@@ -18,13 +18,16 @@ Pandora is one Go module and one binary. The CLI, the daemon, the MCP gateway an
 | `internal/source/openapi` | Loads OpenAPI 3.x and Swagger 2.0, resolves `$ref`, turns operations into tools, builds requests. |
 | `internal/source/command` | Compiles command templates, validates typed arguments and runs local programs. |
 | `internal/oauth` | Discovery, protected resource metadata, dynamic client registration, PKCE login, token refresh and transport. |
-| `internal/core` | Facade used by every entry point: connection pool, tool catalog and cache, calls, policies, auth, install, skills and doctor. |
+| `internal/events` | Local event queue: append, deduplication, readers, retention and pruning. |
+| `internal/webhook` | Webhook receiver: signature or token verification, hub challenge, topic extraction and delivery to the queue. |
+| `internal/tunnel` | Public address for the receiver: Tailscale Funnel or a static HTTPS URL. |
+| `internal/core` | Facade used by every entry point: connection pool, tool catalog and cache, calls, policies, auth, install, skills, events, webhooks, tunnel and doctor. |
 | `internal/guard` | Policy decision (read-only, allow, deny) and the call log. |
 | `internal/skill` | Renders `SKILL.md` and one service file per service. |
 | `internal/install` | Writes skills, MCP entries, permission entries and backups into AI client configs. |
-| `internal/daemon` | Unix socket server, client and autostart. Holds the shared pool of upstream connections. |
-| `internal/gateway` | MCP server for `pandora serve`: four compact tools plus optional direct tools. |
-| `internal/webui` | Local HTTP API, embedded static files, session and CSRF checks, login flow. |
+| `internal/daemon` | Unix socket server, client, autostart, webhook receiver and command readers. Holds the shared pool of upstream connections. |
+| `internal/gateway` | MCP server for `pandora serve`: four compact tools, optional direct tools and `pandora_events` when a webhook exists. |
+| `internal/webui` | Local HTTP API, embedded static files, session and CSRF checks, login flow, webhook and event views, autostart. |
 | `internal/testutil` | Fakes and servers shared by tests: `fakemcp`, `fakeauth`. |
 | `ui` | SvelteKit, Svelte 5 and Tailwind source for the web UI. Built into `internal/webui/dist`. |
 
@@ -62,13 +65,46 @@ A config change never runs in the daemon. `pandora add`, `pandora policy` and th
 
 `pandora serve` builds a gateway over the core and a daemon-backed client. The web UI calls the core and the registry directly. Both still go through `core.Call`, so policies and the call log apply everywhere.
 
+## One webhook delivery
+
+A service sends an event to the callback URL. The public address comes from the tunnel; the daemon owns the receiver and the queue.
+
+```
+service
+  |  signed delivery
+  v
+https://<host>/pandora/hooks/<service>/<account>/<id>
+  |
+  |  Tailscale Funnel, or the static HTTPS base
+  v
+daemon: 127.0.0.1:<port>
+  |
+  v
+webhook.Handler
+  |  lookup service, account and id in the config
+  |  reject bodies over 1 MB
+  |  verify hmac or token in constant time
+  |  answer hub.challenge on GET
+  |  read the topic and the delivery id
+  |  deduplicate for 24 hours
+  v
+events.Queue.Append -> state/events/events.jsonl
+  |
+  |  ai and default readers read through the CLI and the MCP gateway
+  |  command readers: the daemon runs them in order, with retry
+  v
+reader position -> readers.json
+```
+
+The receiver is the only Pandora port exposed to the internet. The daemon logs each verification, each accepted delivery and each refused delivery to `logs/daemon.log`. The port and the public address are under `[webhooks]` in the config.
+
 ## State
 
 All paths come from `config.Paths`, so `PANDORA_HOME` moves everything at once.
 
-- Config: `config.toml`, `config.lock`, and `secrets.json` when `PANDORA_SECRETS=file`.
+- Config: `config.toml` (including `[webhooks]`, `[[readers]]` and the webhook of each account), `config.lock`, and `secrets.json` when `PANDORA_SECRETS=file`.
 - Cache: `tools/<service>.json`, the catalog cache with a 24-hour lifetime.
-- State: `calls.jsonl` and its rotation, `logs/daemon.log`, one upstream log per local MCP account, account locks and the daemon socket.
+- State: `calls.jsonl` and its rotation, `logs/daemon.log` with webhook verifications and deliveries, one upstream log per local MCP account, `events/` with the event queue, account locks and the daemon socket.
 
 Secrets are never part of the config. The config stores the names of secret environment variables and headers, and the secret store holds the values under keys built from service, account and name.
 

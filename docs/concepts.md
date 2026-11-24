@@ -60,9 +60,17 @@ Change it with `pandora expose SERVICE compact` or `pandora expose SERVICE direc
 
 ## Daemon
 
-Reading commands share a background daemon. It starts on demand, keeps upstream connections open, and stops after 15 minutes without activity. Every AI client talks to the same daemon, so a connection opened by one client is reused by another.
+Reading commands share a background daemon. It starts on demand, keeps upstream connections open, and stops after 15 minutes without activity. When at least one account has a webhook, it keeps running so deliveries keep arriving. It also runs the command readers. Every AI client talks to the same daemon, so a connection opened by one client is reused by another.
 
 Commands that change the config always run in the calling process, never in the daemon. The daemon re-reads the config for every request, so it sees changes immediately. Set `PANDORA_NO_DAEMON=1` to bypass it and connect directly; this is useful when debugging.
+
+`pandora autostart on` installs a login item that starts the daemon when you log in, on macOS and Linux. `pandora autostart status` shows it and `pandora autostart off` removes it.
+
+## Webhooks and events
+
+A webhook is a URL a service sends events to. Pandora verifies each delivery, reads its topic and appends it to a local event queue. The public address comes from a tunnel: Tailscale Funnel, or an HTTPS base you provide. The receiver accepts a body up to 1 MB and deduplicates deliveries for 24 hours.
+
+A reader is a named position in the queue. `ai` is the reader AI clients use, `default` is the CLI default, and a command reader is a program the daemon runs for each event. Read and acknowledge events with `pandora events` and `pandora events ack`. See [Webhooks](webhooks.md) for the flags, the tests and the safety notes.
 
 ## The whole picture
 
