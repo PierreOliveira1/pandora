@@ -98,6 +98,51 @@ pandora upgrade
 
    `YOUR_TOOL` is a real tool name returned by `pandora search` or `pandora describe`.
 
+## See a rule in action
+
+This example needs no external service. It creates a test service with two accounts and a tool that pretends to send an email, then blocks that tool on one account.
+
+1. Create the service, its two accounts and the tool:
+
+   ```sh
+   pandora add demo --as personal --kind command
+   pandora add demo --as work
+   pandora tool add demo send-email \
+     --description "Pretend to send an email" \
+     --param to:string:required \
+     -- echo "Email sent to {{to}} (not really)"
+   ```
+
+2. Block the tool on the personal account only:
+
+   ```sh
+   pandora policy demo/personal --deny send-email
+   ```
+
+   `pandora policy demo/personal --readonly` would block it too, together with every other tool that changes data.
+
+3. Call the tool on both accounts, or ask your AI to send a test email from each one:
+
+   ```sh
+   pandora call demo/work send-email '{"to": "team@example.com"}'
+   # Email sent to team@example.com (not really)
+
+   pandora call demo/personal send-email '{"to": "team@example.com"}'
+   # error: tool send-email is blocked for demo/personal by the deny rule "send-email" (change it with pandora policy demo/personal)
+   ```
+
+   The blocked call never reaches the tool.
+
+4. See both attempts with `pandora log`, or on the Activity screen of `pandora ui`:
+
+   ![The Activity screen with the blocked call on demo/personal and the allowed call on demo/work](docs/images/activity-blocked.png)
+
+5. Remove the demo:
+
+   ```sh
+   pandora remove demo --yes
+   ```
+
 ## How your AI uses Pandora
 
 - With the skill, the AI reads a short guide and runs `pandora search`, `pandora describe` and `pandora call` through the CLI.
