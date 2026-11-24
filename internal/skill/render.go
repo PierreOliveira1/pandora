@@ -1,16 +1,21 @@
 package skill
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 )
 
+//go:embed connect.md
+var connectGuide []byte
+
 func Render(doc Doc) (map[string][]byte, error) {
 	services := normalizedServices(doc.Services)
-	files := make(map[string][]byte, len(services)+1)
+	files := make(map[string][]byte, len(services)+2)
 	files["SKILL.md"] = renderSkillMD(Description(doc), services)
+	files["connect.md"] = append([]byte(nil), connectGuide...)
 	for _, service := range services {
 		if service.Name == "" || service.Name == "." || service.Name == ".." || strings.ContainsAny(service.Name, `/\`) {
 			return nil, fmt.Errorf("invalid service name %q", service.Name)
@@ -43,9 +48,10 @@ func renderSkillMD(description string, services []Service) []byte {
 	b.WriteString("5. Add `--json` to any command for machine-readable output, and pipe it to `jq` when you only need part of it.\n\n")
 	b.WriteString("If a command says an account needs login, ask the user to run `pandora auth <service>/<account>` (it opens the browser). Never try to log in yourself.\n")
 	b.WriteString("Tools marked read-only only read data. Confirm with the user before running tools that create, change or delete data, spend money or send messages.\n\n")
+	b.WriteString("## Connect a new service or account\n\nWhen the user asks to connect a service, an API or another account, read `connect.md` in this skill before you run anything.\n\n")
 	b.WriteString("## Services\n\n")
 	if len(services) == 0 {
-		b.WriteString("No services are connected yet.\n")
+		b.WriteString("No services are connected yet. To connect one, read `connect.md`.\n")
 		return []byte(b.String())
 	}
 	for i, service := range services {

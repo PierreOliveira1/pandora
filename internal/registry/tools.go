@@ -1,7 +1,10 @@
 package registry
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 
 	"github.com/PierreOliveira1/pandora/internal/config"
@@ -49,7 +52,7 @@ func (r *Registry) AddCommandTool(in CommandToolInput) error {
 		return fmt.Errorf("tool %q already exists in service %q", in.Name, in.Service)
 	}
 
-	return r.store.Update(func(cfg *config.Config) error {
+	if err := r.store.Update(func(cfg *config.Config) error {
 		service, ok := cfg.Services[in.Service]
 		if !ok {
 			return fmt.Errorf("unknown service %q", in.Service)
@@ -69,7 +72,10 @@ func (r *Registry) AddCommandTool(in CommandToolInput) error {
 			TimeoutSec:  in.TimeoutSec,
 		})
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	return r.clearToolCache(in.Service)
 }
 
 func (r *Registry) RemoveCommandTool(service, name string) error {
@@ -94,7 +100,7 @@ func (r *Registry) RemoveCommandTool(service, name string) error {
 		return fmt.Errorf("tool %q not found in service %q", name, service)
 	}
 
-	return r.store.Update(func(cfg *config.Config) error {
+	if err := r.store.Update(func(cfg *config.Config) error {
 		value, ok := cfg.Services[service]
 		if !ok {
 			return fmt.Errorf("unknown service %q", service)
@@ -110,7 +116,18 @@ func (r *Registry) RemoveCommandTool(service, name string) error {
 			return nil
 		}
 		return fmt.Errorf("tool %q not found in service %q", name, service)
-	})
+	}); err != nil {
+		return err
+	}
+	return r.clearToolCache(service)
+}
+
+func (r *Registry) clearToolCache(service string) error {
+	path := r.store.Paths().ToolCacheFile(service)
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("clearing cached tools of %s: %w; remove %s manually", service, err, path)
+	}
+	return nil
 }
 
 func hasCommandTool(service *config.Service, name string) bool {

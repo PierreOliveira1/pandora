@@ -129,12 +129,6 @@ func newRoot(d deps) *cobra.Command {
 			if cmd.Annotations[syncAnnotation] != "true" {
 				return nil
 			}
-			if cmd.Name() == "tools" {
-				refresh, err := cmd.Flags().GetBool("refresh")
-				if err != nil || !refresh {
-					return nil
-				}
-			}
 			if _, err := d.core.SyncSkills(cmd.Context()); err != nil {
 				fmt.Fprintf(d.stderr, "warning: could not update the AI skill: %v\n", err)
 			}

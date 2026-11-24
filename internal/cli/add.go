@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -34,8 +33,26 @@ func newAdd(d deps) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:         "add <service> --as <account> [flags] [-- command args...]",
-		Short:       "Add a service account",
+		Use:   "add <service> --as <account> [flags] [-- command args...]",
+		Short: "Add a service account",
+		Long:  "Connect a service account. Choose the source with one of: --url (a remote MCP server), a command after -- (a local MCP server), --openapi (an HTTP API with an OpenAPI spec) or --kind command (your own programs; add their tools with pandora tool add).\n\nSecrets given only by name (--secret-env NAME, --header Name) are asked in the terminal without being shown, or read from stdin one per line. They are stored in the system keychain, never in the config file.",
+		Example: `  # Remote MCP server; the OAuth login opens the browser
+  pandora add todoist --as personal --url https://ai.todoist.net/mcp
+
+  # Local MCP server with a secret environment variable
+  pandora add github --as work --secret-env GITHUB_PERSONAL_ACCESS_TOKEN -- npx -y @modelcontextprotocol/server-github
+
+  # HTTP API described by an OpenAPI spec, with an API key header
+  pandora add petstore --as default --openapi https://petstore3.swagger.io/api/v3/openapi.json --header "Authorization"
+
+  # Your own programs or scripts; then add tools with pandora tool add
+  pandora add instagram --as store --kind command --secret-env META_TOKEN
+
+  # Another account of a service that already exists
+  pandora add todoist --as work
+
+  # Pipe a secret instead of typing it (macOS clipboard)
+  pbpaste | pandora add github --as personal --secret-env GITHUB_PERSONAL_ACCESS_TOKEN`,
 		Annotations: map[string]string{syncAnnotation: "true"},
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
@@ -65,11 +82,12 @@ func newAdd(d deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			secretEnv, err := parseSecretEnv(secretFlags, d.stdin, d.stderr)
+			secrets := newSecretReader(d.stdin, d.stderr)
+			secretEnv, err := parseSecretEnv(secretFlags, secrets)
 			if err != nil {
 				return err
 			}
-			headers, err := parseHeaders(headerFlags, d.stdin, d.stderr)
+			headers, err := parseHeaders(headerFlags, secrets)
 			if err != nil {
 				return err
 			}
@@ -232,7 +250,7 @@ func parseEnv(values []string) (map[string]string, error) {
 	return env, nil
 }
 
-func parseSecretEnv(values []string, stdin io.Reader, stderr io.Writer) (map[string]string, error) {
+func parseSecretEnv(values []string, secrets *secretReader) (map[string]string, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -245,7 +263,7 @@ func parseSecretEnv(values []string, stdin io.Reader, stderr io.Writer) (map[str
 		}
 		if !ok {
 			var err error
-			value, err = promptSecret(stdin, stderr, name)
+			value, err = secrets.Read(name)
 			if err != nil {
 				return nil, err
 			}
@@ -255,7 +273,7 @@ func parseSecretEnv(values []string, stdin io.Reader, stderr io.Writer) (map[str
 	return secretEnv, nil
 }
 
-func parseHeaders(values []string, stdin io.Reader, stderr io.Writer) (map[string]string, error) {
+func parseHeaders(values []string, secrets *secretReader) (map[string]string, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -268,7 +286,7 @@ func parseHeaders(values []string, stdin io.Reader, stderr io.Writer) (map[strin
 		}
 		if !hasValue {
 			var err error
-			value, err = promptSecret(stdin, stderr, name)
+			value, err = secrets.Read(name)
 			if err != nil {
 				return nil, err
 			}

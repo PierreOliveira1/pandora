@@ -97,6 +97,8 @@ pandora --version
 - With MCP, the client starts `pandora serve` and sees Pandora's tools directly.
 - Both use the same accounts, rules and daemon.
 
+Your AI can also connect new services: ask it, and it follows the guide in the skill and hands you the commands that need a secret.
+
 See [AI clients](docs/ai-clients.md) for the files Pandora writes, MCP mode and uninstall.
 
 ## Documentation

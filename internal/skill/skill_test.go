@@ -36,9 +36,41 @@ func TestTheSkillDescriptionListsEveryConnectedServiceAndItsAccounts(t *testing.
 		},
 	}}
 
-	want := "Access the user's connected services and accounts through the pandora CLI: meta (accounts: store-a, store-b), todoist (accounts: personal, work). Use it whenever the user asks about these services, their data or actions in them."
+	want := "Access the user's connected services and accounts through the pandora CLI: meta (accounts: store-a, store-b), todoist (accounts: personal, work). Use it whenever the user asks about these services, their data or actions in them, or asks to connect another service or account."
 	if got := Description(doc); got != want {
 		t.Errorf("Description() = %q, want %q", got, want)
+	}
+}
+
+func TestTheSkillTellsTheAIHowToConnectANewService(t *testing.T) {
+	tests := []struct {
+		name string
+		doc  Doc
+	}{
+		{name: "no services"},
+		{name: "one service", doc: Doc{Services: []Service{{
+			Name:     "todoist",
+			Accounts: []Account{{Name: "personal"}},
+		}}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := mustRender(t, tt.doc)
+			guide, ok := files["connect.md"]
+			if !ok {
+				t.Fatalf("Render() files = %v, want connect.md", keys(files))
+			}
+			if !bytes.Equal(guide, connectGuide) {
+				t.Error("connect.md does not match the embedded guide")
+			}
+			if !strings.Contains(string(files["SKILL.md"]), "connect.md") {
+				t.Errorf("SKILL.md does not mention connect.md:\n%s", files["SKILL.md"])
+			}
+			if !strings.Contains(Description(tt.doc), "connect") {
+				t.Errorf("Description() = %q, want it to mention connecting a service", Description(tt.doc))
+			}
+		})
 	}
 }
 

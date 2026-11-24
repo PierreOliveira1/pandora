@@ -68,7 +68,11 @@ func (c *Core) SkillDoc(ctx context.Context) (skill.Doc, error) {
 			DefaultAccount: service.DefaultAccount,
 			Accounts:       accounts,
 		}
-		if catalog, err := c.loadCatalog(serviceName); err == nil {
+		catalog, err := c.loadCatalog(serviceName)
+		if err != nil && service.Kind == config.KindCommand {
+			catalog, err = c.Tools(ctx, serviceName, false)
+		}
+		if err == nil {
 			entry.ToolsKnown = true
 			entry.Instructions = catalog.Instructions
 			entry.Tools = skillTools(catalog.Tools)

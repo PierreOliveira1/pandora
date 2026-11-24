@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -105,6 +106,127 @@ func TestAddThenListShowsTheAccountWithoutLeakingItsSecret(t *testing.T) {
 	}
 }
 
+func TestASecretCanBePipedAndReachesTheCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PANDORA_HOME", home)
+	t.Setenv("PANDORA_SECRETS", "file")
+	t.Setenv("PANDORA_NO_DAEMON", "1")
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Execute(context.Background(), []string{
+		"add", "ig", "--as", "store", "--kind", "command", "--secret-env", "META_TOKEN",
+	}, strings.NewReader("tok123\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("add exited with %d: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"tool", "add", "ig", "token", "--", "printenv", "META_TOKEN",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("tool add exited with %d: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"call", "ig/store", "token", "{}",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("call exited with %d: %s", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "tok123" {
+		t.Fatalf("call output = %q, want %q", got, "tok123")
+	}
+
+	data, err := os.ReadFile(filepath.Join(home, "config", "config.toml"))
+	if err != nil {
+		t.Fatalf("reading config.toml: %v", err)
+	}
+	if strings.Contains(string(data), "tok123") {
+		t.Fatal("config.toml contains the secret value")
+	}
+}
+
+func TestSecretsByPipeAreReadInFlagOrder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PANDORA_HOME", home)
+	t.Setenv("PANDORA_SECRETS", "file")
+	t.Setenv("PANDORA_NO_DAEMON", "1")
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Execute(context.Background(), []string{
+		"add", "ig", "--as", "store", "--kind", "command",
+		"--secret-env", "FIRST_TOKEN", "--secret-env", "SECOND_TOKEN",
+	}, strings.NewReader("first\nsecond\n"), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("add exited with %d: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"tool", "add", "ig", "first", "--", "printenv", "FIRST_TOKEN",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("tool add exited with %d: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"tool", "add", "ig", "second", "--", "printenv", "SECOND_TOKEN",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("tool add exited with %d: %s", code, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"call", "ig/store", "first", "{}",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("call exited with %d: %s", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "first" {
+		t.Fatalf("first call output = %q, want %q", got, "first")
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = cli.Execute(context.Background(), []string{
+		"call", "ig/store", "second", "{}",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("call exited with %d: %s", code, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != "second" {
+		t.Fatalf("second call output = %q, want %q", got, "second")
+	}
+}
+
+func TestAMissingSecretExplainsHowToProvideIt(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("PANDORA_HOME", home)
+	t.Setenv("PANDORA_SECRETS", "file")
+	t.Setenv("PANDORA_NO_DAEMON", "1")
+
+	var stdout, stderr bytes.Buffer
+	code := cli.Execute(context.Background(), []string{
+		"add", "ig", "--as", "store", "--kind", "command", "--secret-env", "META_TOKEN",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("add succeeded without a secret value")
+	}
+	want := "value for META_TOKEN required: run this command in a terminal, where Pandora asks for it without showing it, or pipe the value on stdin"
+	if !strings.Contains(stderr.String(), want) {
+		t.Fatalf("stderr = %q, want it to contain %q", stderr.String(), want)
+	}
+}
+
 func TestUserAddsALocalMCPAndCallsATool(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("PANDORA_HOME", home)
@@ -167,6 +289,63 @@ func TestAddingAnAccountUpdatesTheSkillOfEveryInstalledAIClient(t *testing.T) {
 		if !strings.Contains(string(data), "fake (accounts: b)") {
 			t.Fatalf("%s = %q, want the new account", path, data)
 		}
+	}
+}
+
+func TestAToolAddedToACommandServiceShowsUpInTheListAndInTheSkill(t *testing.T) {
+	home, pandoraHome := installedCLIHomes(t)
+	t.Setenv("HOME", home)
+	t.Setenv("PANDORA_HOME", pandoraHome)
+	t.Setenv("PANDORA_SECRETS", "file")
+	t.Setenv("PANDORA_NO_DAEMON", "1")
+
+	var stdout, stderr bytes.Buffer
+	run := func(args ...string) string {
+		t.Helper()
+		stdout.Reset()
+		stderr.Reset()
+		if code := cli.Execute(context.Background(), args, strings.NewReader(""), &stdout, &stderr); code != 0 {
+			t.Fatalf("%v exited with %d: %s", args, code, stderr.String())
+		}
+		return stdout.String()
+	}
+	skillPath := filepath.Join(home, ".claude", "skills", "pandora", "services", "ops.md")
+	readSkill := func() string {
+		t.Helper()
+		data, err := os.ReadFile(skillPath)
+		if err != nil {
+			t.Fatalf("reading %s: %v", skillPath, err)
+		}
+		return string(data)
+	}
+
+	run("install")
+	run("add", "ops", "--as", "local", "--kind", "command")
+	run("tool", "add", "ops", "a", "--", "echo", "a")
+
+	if skill := readSkill(); !strings.Contains(skill, "### a") {
+		t.Fatalf("services/ops.md after adding tool a:\n%s", skill)
+	}
+	if listed := listedToolNames(run("tools", "ops")); !slices.Contains(listed, "a") {
+		t.Fatalf("tools ops = %v, want a", listed)
+	}
+
+	run("tool", "add", "ops", "b", "--", "echo", "b")
+
+	if skill := readSkill(); !strings.Contains(skill, "### a") || !strings.Contains(skill, "### b") {
+		t.Fatalf("services/ops.md after adding tool b:\n%s", skill)
+	}
+	if listed := listedToolNames(run("tools", "ops")); !slices.Contains(listed, "a") || !slices.Contains(listed, "b") {
+		t.Fatalf("tools ops = %v, want a and b", listed)
+	}
+
+	run("tool", "remove", "ops", "a")
+
+	if skill := readSkill(); strings.Contains(skill, "### a") || !strings.Contains(skill, "### b") {
+		t.Fatalf("services/ops.md after removing tool a:\n%s", skill)
+	}
+	if listed := listedToolNames(run("tools", "ops")); slices.Contains(listed, "a") || !slices.Contains(listed, "b") {
+		t.Fatalf("tools ops = %v, want only b", listed)
 	}
 }
 
@@ -240,4 +419,19 @@ func installedCLIHomes(t *testing.T) (string, string) {
 		}
 	}
 	return home, pandoraHome
+}
+
+func listedToolNames(output string) []string {
+	names := make([]string, 0)
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.HasPrefix(line, "  ") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 || fields[0] == "error:" {
+			continue
+		}
+		names = append(names, fields[0])
+	}
+	return names
 }

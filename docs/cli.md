@@ -34,6 +34,14 @@ pandora add <service> --as <account> [flags] [-- command args...]
 | `--service-description string` | Service description, only when creating the service. |
 | `--no-login` | Do not start the OAuth login. |
 
+A secret given only by name (`--secret-env NAME`, `--header Name`) is read from the terminal without being shown. It can also come from stdin, one line per secret:
+
+```sh
+pbpaste | pandora add github --as personal --secret-env GITHUB_PERSONAL_ACCESS_TOKEN
+```
+
+With several secrets, the lines follow the flag order: `--secret-env` first, then `--header`. With no terminal and no piped value, the command stops and says how to provide it.
+
 ```sh
 pandora add todoist --as personal --url https://ai.todoist.net/mcp
 ```
@@ -536,6 +544,10 @@ pandora tool add <service> <name> [flags] -- <command and args>
 | `--param stringArray` | Parameter as `name:type[:required][:description]`. Repeatable. |
 | `--readonly` | Mark the tool as read-only. |
 | `--timeout int` | Timeout in seconds. Default 60. |
+
+Each `{{name}}` in the command is replaced by the argument with that name, as a whole argument or inside one (`--title={{title}}`). A command argument that holds a missing optional parameter is dropped. An array used as a whole argument becomes one argument per item.
+
+The command runs directly, without a shell: pipes, redirections and `$VARS` are not expanded, so call a script for more than one step. The account's `--env` and `--secret-env` values reach the program as environment variables.
 
 ```sh
 pandora tool add git log \

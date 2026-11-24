@@ -35,7 +35,7 @@ func newList(d deps) *cobra.Command {
 			}
 
 			if len(accounts) == 0 && len(emptyServices) == 0 {
-				fmt.Fprintln(d.stdout, "No accounts yet. Add one with: pandora add <service> --as <account> --url <mcp-url>")
+				fmt.Fprintln(d.stdout, "No accounts yet. Connect a service with pandora add (pandora add --help shows MCP servers, OpenAPI APIs and your own commands).")
 				return nil
 			}
 

@@ -82,6 +82,14 @@ pandora add github --as work \
   -- npx -y @modelcontextprotocol/server-github
 ```
 
+A value given only by name (`--secret-env NAME` or `--header Name`) can also come from stdin, one line per secret. On macOS, pipe the clipboard:
+
+```sh
+pbpaste | pandora add github --as personal --secret-env GITHUB_PERSONAL_ACCESS_TOKEN
+```
+
+With several secrets, the lines are read in flag order: all `--secret-env` first, then all `--header`. If there is no terminal and no piped value, Pandora stops and says how to provide it.
+
 The stderr of the server goes to a log file under the state directory; `pandora paths` prints the directory. The server never writes to Pandora's stdout.
 
 A second account of the same local server reuses the service command:

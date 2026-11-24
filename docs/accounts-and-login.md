@@ -100,6 +100,8 @@ Header values are stored in the secret store under the service and account. `pan
 
 By default, secrets go to the operating system keychain: tokens, headers, environment variables and OAuth client secrets. The config file stores only the names of the secret variables and headers.
 
+Secrets given only by name (`--secret-env NAME`, `--header Name`) can also come from stdin, one line per secret. On macOS, `pbpaste | pandora add ...` pipes the clipboard. With no terminal and no piped value, Pandora stops and says how to provide it.
+
 On a headless machine, or when the keychain is not reachable, use a local file:
 
 ```sh

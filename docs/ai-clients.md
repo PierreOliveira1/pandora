@@ -56,6 +56,8 @@ The skill has three levels:
 2. `SKILL.md`: how to work, plus a section per service with its accounts and up to 15 tool names.
 3. `services/<service>.md`: one file per service with every tool, its arguments and an example call. OpenAPI and MCP instructions from the service are included when the server provides them.
 
+The skill also includes `connect.md`, a guide the AI reads when you ask it to connect a service. The AI writes the commands and you type the secrets in your own terminal.
+
 The AI uses the CLI:
 
 ```sh
