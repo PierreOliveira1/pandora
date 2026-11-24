@@ -103,9 +103,11 @@ type = "integer"
 
 | Key | Meaning |
 | --- | --- |
-| `kind` | `mcp-http`, `mcp-stdio`, `openapi` or `command`. |
+| `kind` | `mcp-http`, `mcp-stdio`, `openapi`, `command` or `http`. |
 | `description` | What the service is for. Shown in the skill and the UI. |
 | `url` | Endpoint of an `mcp-http` service. |
+| `urls` | Named base URLs of an `http` service. |
+| `headers` | Templates for every request of an `http` service. A template can only use `{{env.NAME}}`. |
 | `command` | Command that starts an `mcp-stdio` service. |
 | `spec` | Path or URL of an `openapi` document. |
 | `auth` | `oauth`, `header` or `none`. |
@@ -115,7 +117,7 @@ type = "integer"
 | `default_account` | Account used when a ref names only the service. |
 | `expose` | `compact` or `direct` in MCP clients. Empty means `compact`. |
 | `env` | Environment variables shared by the service. |
-| `tools` | Tools of a `command` service. |
+| `tools` | Tools of a `command` or `http` service. |
 
 ### Account fields
 
@@ -139,12 +141,58 @@ type = "integer"
 | `name` | Tool name. Lowercase letters, digits and dashes, up to 32 characters. |
 | `description` | What the tool does. |
 | `command` | Command and arguments. `{{param}}` marks a parameter. |
+| `http` | HTTP request of an `http` service. See below. |
 | `params` | Map of parameter definitions. |
 | `params.<name>.type` | `string`, `number`, `integer`, `boolean` or `array`. |
 | `params.<name>.required` | Whether the argument is mandatory. |
 | `params.<name>.description` | Description shown to the AI. |
 | `readonly` | Marks the tool as read-only. |
 | `timeout_sec` | Timeout in seconds. Empty means 60. |
+
+An `http` tool describes a request instead of a command. It uses the same `params`, `readonly` and `timeout_sec`; the request is under `[services.X.tools.http]`:
+
+| Key | Meaning |
+| --- | --- |
+| `http.url` | Name of the base URL. Empty uses the only URL. |
+| `http.method` | `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`. |
+| `http.path` | Path after the base URL, starting with `/`. |
+| `http.query` | Query parameters by name. Values are templates. |
+| `http.headers` | Request headers by name. Values are templates. |
+| `http.form` | Form fields by name. Cannot be used with `json`. |
+| `http.json` | JSON fields by dotted path. Cannot be used with `form`. |
+
+```toml
+[services.shop]
+kind = "http"
+description = "Orders."
+default_account = "store"
+auth = "none"
+
+[services.shop.urls]
+api = "https://api.example.com"
+admin = "https://admin.example.com"
+
+[services.shop.headers]
+Authorization = "Bearer {{env.API_TOKEN}}"
+
+[services.shop.accounts.store]
+env = { STORE_ID = "42" }
+secret_env = ["API_TOKEN"]
+
+[[services.shop.tools]]
+name = "orders"
+description = "List orders"
+readonly = true
+
+[services.shop.tools.http]
+url = "api"
+method = "GET"
+path = "/v1/stores/{{env.STORE_ID}}/orders"
+query = { limit = "{{limit}}" }
+
+[services.shop.tools.params.limit]
+type = "integer"
+```
 
 ### Webhooks and event readers
 

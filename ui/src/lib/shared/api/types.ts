@@ -1,4 +1,4 @@
-export type ServiceKind = 'mcp-http' | 'mcp-stdio' | 'openapi' | 'command';
+export type ServiceKind = 'mcp-http' | 'mcp-stdio' | 'openapi' | 'command' | 'http';
 
 export type AuthMode = 'none' | 'header' | 'oauth';
 

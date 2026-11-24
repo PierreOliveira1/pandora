@@ -161,6 +161,8 @@ func newRoot(d deps) *cobra.Command {
 		newStatus(d),
 		newSetDescription(d),
 		newTool(d),
+		newHTTP(d),
+		newEnv(d),
 		newPolicy(d),
 		newLog(d),
 		newAuth(d),

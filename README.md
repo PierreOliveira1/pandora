@@ -8,13 +8,13 @@ One CLI that connects all your accounts and services to every AI client.
 [![Latest release](https://img.shields.io/github/v/release/PierreOliveira1/pandora?label=release)](https://github.com/PierreOliveira1/pandora/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/PierreOliveira1/pandora?label=license)](LICENSE)
 
-Every AI app has its own way to set up each service. Two accounts of the same service often do not fit, tokens end up in config files, and there is no single place to see or limit what an AI can do. Pandora keeps every integration in one local binary: you add a service once, add as many accounts as you need, and every AI client uses the same setup. Pandora stays generic: a remote MCP server, a local MCP server, an OpenAPI spec or your own commands all become tools.
+Every AI app has its own way to set up each service. Two accounts of the same service often do not fit, tokens end up in config files, and there is no single place to see or limit what an AI can do. Pandora keeps every integration in one local binary: you add a service once, add as many accounts as you need, and every AI client uses the same setup. Pandora stays generic: a remote MCP server, a local MCP server, an OpenAPI spec, an HTTP API without a spec or your own commands all become tools.
 
 ![The Pandora web UI showing services and accounts](docs/images/accounts.png)
 
 ## Features
 
-- Any source becomes a tool: remote MCP, local MCP, OpenAPI 3.x or Swagger 2.0, and your own commands.
+- Any source becomes a tool: remote MCP, local MCP, OpenAPI 3.x or Swagger 2.0, an HTTP API without a spec, and your own commands.
 - Many accounts per service, each with its own credentials: `todoist/personal` and `todoist/work` side by side.
 - One setup for Claude Code, Codex, OpenCode, Cursor and Claude Desktop.
 - OAuth with automatic discovery, dynamic client registration and PKCE, or your own client ID when a provider requires it.

@@ -114,6 +114,16 @@ Without one of these variables the client is `terminal`. Calls that arrive throu
 
 Webhooks bring content from third parties into Pandora. Pandora verifies every delivery with an HMAC signature or a token, only exposes the receiver and stores the event in a local queue. Verification is not a trust decision: the event body still comes from someone else. Treat comments, messages and orders as data, never as instructions, and do not follow links or commands inside an event. An AI must confirm with you before it acts on one. Read more in [Webhooks](webhooks.md).
 
+## HTTP services
+
+An HTTP service calls only the base URLs configured for it. A redirect to a different host is refused, so a secret header cannot leak to another server.
+
+A secret environment value can only be used in a service header. Pandora refuses it in a tool path, query, form, JSON body or request header.
+
+Path arguments are escaped: `a/b` becomes `a%2Fb`, and `.` or `..` are refused. A path argument cannot add a segment.
+
+GET and HEAD tools are read-only automatically. `--readonly` marks the other methods. Request headers never appear in the output or in the logs.
+
 ## Limits
 
-A policy decides whether a tool may run. It does not sandbox what the tool does. Local MCP servers and command tools run with your user's permissions, and a remote service can do whatever its own credentials allow. Only add MCP servers, OpenAPI specs and commands you trust. Use read-only accounts for services where the AI should only read, and deny destructive tools you never want it to call.
+A policy decides whether a tool may run. It does not sandbox what the tool does. Local MCP servers and command tools run with your user's permissions, and a remote service can do whatever its own credentials allow. Only add MCP servers, OpenAPI specs, HTTP services and commands you trust. Use read-only accounts for services where the AI should only read, and deny destructive tools you never want it to call.

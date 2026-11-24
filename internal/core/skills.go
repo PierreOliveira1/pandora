@@ -70,7 +70,7 @@ func (c *Core) SkillDoc(ctx context.Context) (skill.Doc, error) {
 			Accounts:       accounts,
 		}
 		catalog, err := c.loadCatalog(serviceName)
-		if err != nil && service.Kind == config.KindCommand {
+		if err != nil && (service.Kind == config.KindCommand || service.Kind == config.KindHTTP) {
 			catalog, err = c.Tools(ctx, serviceName, false)
 		}
 		if err == nil {

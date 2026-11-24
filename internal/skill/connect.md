@@ -13,7 +13,8 @@ Look in the service's official docs and use the first option that exists:
 | A remote MCP server (an `https://` URL) | `pandora add <service> --as <account> --url <url>` |
 | A local MCP server (a package run with `npx`, `uvx` or similar) | `pandora add <service> --as <account> -- <command> <args>` |
 | An OpenAPI (Swagger) spec of its HTTP API | `pandora add <service> --as <account> --openapi <url-or-path>` |
-| Only an HTTP API without a spec, a CLI or a script | a command service, see step 4 |
+| An HTTP API without a spec | an HTTP service, see step 4 |
+| Only a CLI, or a flow with several steps | a command service, see step 5 |
 
 - Prefer the service's official MCP server. Ask the user before you use a third-party package or a paid middleman service.
 - From the same docs, tell the user what they must set up on the service's side: account type, developer app, permissions or scopes, and how long a token lasts. Get ids your tools need (like a user or account id) from the API itself when it offers an endpoint for that, instead of asking the user.
@@ -32,20 +33,44 @@ Pandora can only log in to servers that publish OAuth discovery metadata, which 
 
 Write the full command for the user to run in their own terminal. Include the secret names, never the values:
 
-- `--secret-env NAME` sets an environment variable, for local MCP servers and command services.
-- `--header "Name"` sets an HTTP header, for remote MCP servers and OpenAPI. For a bearer token, use `--header "Authorization"` and type `Bearer <token>` as the value.
+- `--secret-env NAME` sets an environment variable, for local MCP servers, command services and HTTP services.
+- `--header "Name"` sets an HTTP header, for remote MCP servers, OpenAPI and HTTP services. For a bearer token, use `--header "Authorization"` and type `Bearer <token>` as the value.
+- In an HTTP service, prefer `--secret-env API_TOKEN` and build the header from it with `pandora http header` (step 4). The user then types only the token, and scripts of the same service can read it too.
 
 Pandora asks for each value without showing it and saves it in the system keychain. The user can also pipe the value, for example from the clipboard on macOS: `pbpaste | pandora add ... --secret-env NAME`.
 
 If you run such a command yourself, it stops with `value for NAME required`. That is expected: give the command to the user.
 
-Values that are not secret, like an account id, go in `--env NAME=value`.
+Values that are not secret, like an account id, go in `--env NAME=value`. Change them later with `pandora env <service>/<account> NAME=value`.
 
 Tokens that expire must be replaced by the user. Tell them when it will expire, and that they replace it with `pandora remove <service>/<account>` followed by the same `pandora add` command.
 
-## 4. Command services
+## 4. HTTP services
 
-A command service turns any program into tools: a CLI, a script, or `curl` calls to an HTTP API.
+For an HTTP API without a spec, each tool is one request described in the command. No script is needed.
+
+```
+pandora add <service> --as <account> --http <name>=<base-url> --secret-env API_TOKEN --env ACCOUNT_ID=<id>
+pandora http header <service> Authorization "Bearer {{env.API_TOKEN}}"
+pandora tool add <service> <tool> --description "<what it does>" \
+  --http "GET /accounts/{{env.ACCOUNT_ID}}/items" \
+  --param limit:integer:"How many items" --query fields=id,name --query "limit={{limit}}"
+```
+
+- Base URLs use `https://` (`http://` only for localhost). A service can have several, each with a name, for example `--http graph=https://graph.example.com/v2 --http upload=https://upload.example.com`. With more than one, every tool chooses with `--url <name>`. Add one later with `pandora http url <service> <name> <url>`.
+- `{{name}}` is the tool argument with that name and `{{env.NAME}}` an account value. Both work in the path, `--query`, `--form`, `--json` and `--request-header`. An entry whose optional argument is not given is dropped.
+- A secret goes only in a service header, set with `pandora http header`. Pandora refuses a secret in the path, the query or the body. If the API takes the token only in the query, use a command service instead.
+- Each account has its own values, so the same tools work for every account. Put ids in the account (`--env`, or `pandora env` later) and use them as `{{env.NAME}}`. Get ids from the API itself when it has an endpoint for that.
+- `--json a.b=value` builds `{"a": {"b": value}}`. A value that is a whole placeholder, like `--json "count={{count}}"`, keeps the argument's type. `--form key=value` sends a form instead. GET and HEAD have no body.
+- Methods are GET, HEAD, POST, PUT, PATCH and DELETE. GET and HEAD tools are read-only. Mark other read-only tools with `--readonly`.
+- Explore the API before you add tools, with the `http_get` tool that every HTTP service has. It only reads: `pandora call <service>/<account> http_get '{"path": "/me", "query": {"fields": "id,name"}}'`. Add `"url": "<name>"` when the service has several URLs.
+- A response with a status of 400 or more is an error that shows the API's message.
+- `pandora http show <service>` lists the URLs, headers and HTTP tools. `pandora tool remove <service> <tool>` removes a tool.
+- A flow with several steps, like an upload followed by polling, does not fit in one request. Add a script for that flow as a program tool in the same service (step 5). Use scripts only for such flows.
+
+## 5. Command services
+
+A command service turns any program into tools: a CLI or a script. An HTTP service can also hold program tools, for flows with several steps.
 
 ```
 pandora add <service> --as <account> --kind command --secret-env API_TOKEN
@@ -65,7 +90,7 @@ pandora tool add <service> <tool> --description "<what it does>" \
 - The service and its tools stay when its last account is removed, so you can prepare the tools first and let the user add the account with the secret.
 - Check what the API accepts before you design the tool. For example, if it only takes a public URL for a file, say so to the user instead of taking a local path.
 
-## 5. Check it
+## 6. Check it
 
 1. `pandora tools <service>` lists the tools. `pandora describe <service> <tool>` shows a tool's arguments.
 2. Run a read-only tool first. Ask the user before you run a tool that posts, changes or deletes data.
@@ -73,7 +98,7 @@ pandora tool add <service> <tool> --description "<what it does>" \
 
 To experiment without touching the user's setup, set `PANDORA_HOME` to one empty temporary folder, with `PANDORA_SECRETS=file` and `PANDORA_NO_DAEMON=1`, on every command. If you add something by mistake, remove it with `pandora remove <service>/<account>`, or `pandora remove <service> --yes` for a whole service.
 
-## 6. Receive events (webhooks)
+## 7. Receive events (webhooks)
 
 Read this when the user wants Pandora to receive events from a service: new comments, messages, orders. The service must offer webhooks. In its docs, check three things: how it signs deliveries, whether it sends a GET verification with `hub.challenge`, and where the event type comes from.
 

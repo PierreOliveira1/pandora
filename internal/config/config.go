@@ -7,6 +7,7 @@ const (
 	KindMCPHTTP  Kind = "mcp-http"
 	KindOpenAPI  Kind = "openapi"
 	KindCommand  Kind = "command"
+	KindHTTP     Kind = "http"
 )
 
 type AuthMode string
@@ -58,6 +59,8 @@ type Service struct {
 	Spec           string              `toml:"spec,omitempty" json:"spec,omitempty"`
 	Auth           AuthMode            `toml:"auth,omitempty" json:"auth,omitempty"`
 	OAuth          *OAuthConfig        `toml:"oauth,omitempty" json:"oauth,omitempty"`
+	URLs           map[string]string   `toml:"urls,omitempty" json:"urls,omitempty"`
+	Headers        map[string]string   `toml:"headers,omitempty" json:"headers,omitempty"`
 	Tools          []CommandTool       `toml:"tools,omitempty" json:"tools,omitempty"`
 	Accounts       map[string]*Account `toml:"accounts,omitempty" json:"accounts,omitempty"`
 }
@@ -98,10 +101,21 @@ type Webhook struct {
 type CommandTool struct {
 	Name        string                  `toml:"name" json:"name"`
 	Description string                  `toml:"description,omitempty" json:"description,omitempty"`
-	Command     []string                `toml:"command" json:"command"`
+	Command     []string                `toml:"command,omitempty" json:"command,omitempty"`
+	HTTP        *HTTPRequest            `toml:"http,omitempty" json:"http,omitempty"`
 	Params      map[string]CommandParam `toml:"params,omitempty" json:"params,omitempty"`
 	ReadOnly    bool                    `toml:"readonly,omitempty" json:"readonly,omitempty"`
 	TimeoutSec  int                     `toml:"timeout_sec,omitempty" json:"timeout_sec,omitempty"`
+}
+
+type HTTPRequest struct {
+	URL     string            `toml:"url,omitempty" json:"url,omitempty"`
+	Method  string            `toml:"method" json:"method"`
+	Path    string            `toml:"path" json:"path"`
+	Query   map[string]string `toml:"query,omitempty" json:"query,omitempty"`
+	Headers map[string]string `toml:"headers,omitempty" json:"headers,omitempty"`
+	Form    map[string]string `toml:"form,omitempty" json:"form,omitempty"`
+	JSON    map[string]string `toml:"json,omitempty" json:"json,omitempty"`
 }
 
 type CommandParam struct {

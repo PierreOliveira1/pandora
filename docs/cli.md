@@ -22,6 +22,7 @@ pandora add <service> --as <account> [flags] [-- command args...]
 | `--as string` | Account alias. Required. |
 | `--url string` | MCP server URL. |
 | `--openapi string` | Path or URL of an OpenAPI spec. |
+| `--http stringArray` | Base URL of an HTTP API as `name=URL`; a URL alone is named `api`. Repeatable. |
 | `--kind string` | Service kind. The only accepted value is `command`. |
 | `--env stringArray` | Environment variable `KEY=VALUE`. Repeatable. |
 | `--secret-env stringArray` | Secret environment variable `NAME` or `NAME=VALUE`. Repeatable. Without a value, Pandora prompts. |
@@ -50,6 +51,13 @@ pandora add todoist --as personal --url https://ai.todoist.net/mcp
 pandora add github --as work \
   --secret-env GITHUB_PERSONAL_ACCESS_TOKEN=YOUR_TOKEN \
   -- npx -y @modelcontextprotocol/server-github
+```
+
+```sh
+pandora add shop --as store \
+  --http api=https://api.example.com \
+  --env STORE_ID=42 \
+  --secret-env API_TOKEN
 ```
 
 ## pandora auth
@@ -296,6 +304,32 @@ pandora doctor --offline
 
 The command exits with status 1 when a check fails.
 
+## pandora env
+
+Manage the non-secret values of an account.
+
+```
+pandora env <service>/<account> [NAME=VALUE...] [--remove NAME] [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--remove string` | Remove `NAME`. |
+
+```sh
+pandora env shop/store STORE_ID=42 CURRENCY=USD
+```
+
+```sh
+pandora env shop/store
+```
+
+```sh
+pandora env shop/store --remove CURRENCY
+```
+
+With no value arguments, it lists the account's values. Secret names appear as `NAME (secret)`; Pandora never prints the value. Setting a name that is a secret is refused.
+
 ## pandora events
 
 Read webhook events from the local queue.
@@ -433,6 +467,76 @@ This command has no flags of its own.
 ```sh
 pandora help add
 ```
+
+## pandora http
+
+Manage the URLs and headers of HTTP services.
+
+```
+pandora http [command]
+```
+
+### pandora http header
+
+Set or remove a header sent with every request of an HTTP service.
+
+```
+pandora http header <service> <name> <template> [flags]
+pandora http header <service> <name> --remove [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--remove` | Remove the header. |
+
+The template can only use `{{env.NAME}}`, which may be an environment or secret value of an account. The config stores the template, never the value.
+
+```sh
+pandora http header instagram Authorization "OAuth {{env.META_TOKEN}}"
+```
+
+```sh
+pandora http header instagram Authorization --remove
+```
+
+`Host`, `Content-Length`, `Content-Type`, `Transfer-Encoding` and `Connection` are refused.
+
+### pandora http show
+
+Show the URLs, headers and HTTP tools of a service.
+
+```
+pandora http show <service> [flags]
+```
+
+This command has no flags of its own.
+
+```sh
+pandora http show instagram
+```
+
+### pandora http url
+
+Set or remove a base URL of an HTTP service.
+
+```
+pandora http url <service> <name> <url> [flags]
+pandora http url <service> <name> --remove [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--remove` | Remove the URL. |
+
+```sh
+pandora http url instagram beta https://api.example.com
+```
+
+```sh
+pandora http url instagram beta --remove
+```
+
+A service must keep at least one URL. Pandora refuses to remove the last URL or one used by an HTTP tool. A command service cannot become an HTTP service; remove it and create it again.
 
 ## pandora install
 
@@ -656,7 +760,7 @@ pandora sync
 
 ## pandora tool
 
-Manage tools of command services.
+Manage tools of command and HTTP services.
 
 ```
 pandora tool [command]
@@ -664,10 +768,10 @@ pandora tool [command]
 
 ### pandora tool add
 
-Add a tool to a command service.
+Add a tool to a command or HTTP service.
 
 ```
-pandora tool add <service> <name> [flags] -- <command and args>
+pandora tool add <service> <name> [flags] [-- <command> | --http "METHOD /path"]
 ```
 
 | Flag | Meaning |
@@ -676,8 +780,14 @@ pandora tool add <service> <name> [flags] -- <command and args>
 | `--param stringArray` | Parameter as `name:type[:required][:description]`. Repeatable. |
 | `--readonly` | Mark the tool as read-only. |
 | `--timeout int` | Timeout in seconds. Default 60. |
+| `--http string` | HTTP request as `"METHOD /path"`. |
+| `--url string` | URL name of the HTTP service. Required when the service has several URLs. |
+| `--query stringArray` | Query parameter `key=value`. Repeatable. |
+| `--form stringArray` | Form field `key=value`. Repeatable. |
+| `--json stringArray` | JSON field `key.path=value`. Repeatable. |
+| `--request-header stringArray` | Request header `Name=value`. Repeatable. |
 
-Each `{{name}}` in the command is replaced by the argument with that name, as a whole argument or inside one (`--title={{title}}`). A command argument that holds a missing optional parameter is dropped. An array used as a whole argument becomes one argument per item.
+For a command service, each `{{name}}` in the command is replaced by the argument with that name, as a whole argument or inside one (`--title={{title}}`). A command argument that holds a missing optional parameter is dropped. An array used as a whole argument becomes one argument per item.
 
 The command runs directly, without a shell: pipes, redirections and `$VARS` are not expanded, so call a script for more than one step. The account's `--env` and `--secret-env` values reach the program as environment variables.
 
@@ -690,9 +800,22 @@ pandora tool add git log \
   -- git -C {{repo}} log --max-count={{n}} --oneline
 ```
 
+For an HTTP service, use `--http "METHOD /path"`. Methods are `GET`, `HEAD`, `POST`, `PUT`, `PATCH` and `DELETE`. `--url` chooses a base URL, and `--query`, `--form`, `--json` and `--request-header` describe the request. `{{param}}` and `{{env.NAME}}` work in these fields; a secret environment value is allowed only in service headers. A path value is escaped, so `a/b` becomes `a%2Fb`. `--form` and `--json` cannot be used together, GET and HEAD have no body and are read-only, and the timeout defaults to 60 seconds.
+
+```sh
+pandora tool add shop orders \
+  --http "GET /v1/stores/{{env.STORE_ID}}/orders" \
+  --url api \
+  --param limit:integer \
+  --query "limit={{limit}}" \
+  --readonly
+```
+
+An HTTP service also accepts a command after `--` for a flow with several steps.
+
 ### pandora tool remove
 
-Remove a tool from a command service.
+Remove a tool from a command or HTTP service.
 
 ```
 pandora tool remove <service> <name> [flags]

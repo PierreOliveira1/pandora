@@ -23,16 +23,19 @@ Commands that change account settings need the full ref: `pandora policy todoist
 
 ## Source kinds
 
-The core knows no specific service. Anything enters through one of four kinds:
+The core knows no specific service. Anything enters through one of five kinds:
 
 | Kind | What it is | How you add it |
 | --- | --- | --- |
 | `mcp-http` | A remote MCP server reached over HTTP | `pandora add SERVICE --as ACCOUNT --url https://example.com/mcp` |
 | `mcp-stdio` | A local MCP server started as a command | `pandora add SERVICE --as ACCOUNT -- npx -y PACKAGE` |
 | `openapi` | An HTTP API described by an OpenAPI 3.x or Swagger 2.0 document | `pandora add SERVICE --as ACCOUNT --openapi ./spec.yaml` |
+| `http` | An HTTP API without an OpenAPI document; tools are requests described in the config | `pandora add SERVICE --as ACCOUNT --http name=URL` |
 | `command` | Your own commands declared as typed tools | `pandora add SERVICE --as default --kind command` |
 
 A source is the live connection to one account. It can list tools and call them. Pandora opens a source on demand, keeps it open in a connection pool and closes it when it is idle or when the account changes.
+
+An `http` service has at least one base URL. It accepts HTTP tools and program tools.
 
 ## Catalog cache
 

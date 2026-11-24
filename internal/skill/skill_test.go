@@ -115,7 +115,7 @@ func TestTheConnectGuideExplainsHowToReceiveWebhooks(t *testing.T) {
 	files := mustRender(t, Doc{})
 	guide := string(files["connect.md"])
 	for _, want := range []string{
-		"## 6. Receive events (webhooks)",
+		"Receive events (webhooks)",
 		"pandora tunnel use tailscale",
 		"pandora webhook add",
 		"--challenge hub",

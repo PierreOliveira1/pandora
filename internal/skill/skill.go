@@ -39,7 +39,7 @@ type Tool struct {
 const MaxDescription = 1024
 
 const (
-	noServicesDescription = "Access the user's services and accounts through the pandora CLI. No services are connected yet. Use it when the user asks to connect a service, an API or an account: MCP servers, OpenAPI APIs or any command line tool."
+	noServicesDescription = "Access the user's services and accounts through the pandora CLI. No services are connected yet. Use it when the user asks to connect a service, an API or an account: MCP servers, HTTP APIs with or without an OpenAPI spec, or any command line tool."
 	descriptionPrefix     = "Access the user's connected services and accounts through the pandora CLI: "
 	descriptionSuffix     = ". Use it whenever the user asks about these services, their data or actions in them, or asks to connect another service or account."
 	eventsSuffix          = ". Use it whenever the user asks about these services, their data, actions in them or the events they sent, like new comments or messages, or asks to connect another service or account."

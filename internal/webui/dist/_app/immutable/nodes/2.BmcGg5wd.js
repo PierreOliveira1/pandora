@@ -1,0 +1,1 @@
+import"../chunks/DaVm1Wwo.js";import{t as e}from"../chunks/CapcdPh2.js";function t(t){e(t,{})}export{t as component};

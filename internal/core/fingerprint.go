@@ -17,6 +17,8 @@ func accountFingerprint(svc *config.Service, acc *config.Account) string {
 		Command       []string
 		ServiceEnv    map[string]string
 		ServiceURL    string
+		ServiceURLs   map[string]string
+		Headers       map[string]string
 		Spec          string
 		Auth          config.AuthMode
 		OAuth         *config.OAuthConfig
@@ -31,6 +33,8 @@ func accountFingerprint(svc *config.Service, acc *config.Account) string {
 		Command:       svc.Command,
 		ServiceEnv:    svc.Env,
 		ServiceURL:    svc.URL,
+		ServiceURLs:   svc.URLs,
+		Headers:       svc.Headers,
 		Spec:          svc.Spec,
 		Auth:          svc.Auth,
 		OAuth:         svc.OAuth,

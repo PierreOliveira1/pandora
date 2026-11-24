@@ -270,7 +270,7 @@
 	</div>
 
 	{#snippet footer()}
-		{#if service.kind === 'command'}
+		{#if service.kind === 'command' || (service.kind === 'http' && tool.name !== 'http_get')}
 			<Button
 				variant="secondary"
 				class="mr-auto"

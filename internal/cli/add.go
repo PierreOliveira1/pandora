@@ -19,6 +19,7 @@ func newAdd(d deps) *cobra.Command {
 		account      string
 		rawURL       string
 		openapi      string
+		httpFlags    []string
 		kindFlag     string
 		envFlags     []string
 		secretFlags  []string
@@ -35,7 +36,7 @@ func newAdd(d deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "add <service> --as <account> [flags] [-- command args...]",
 		Short: "Add a service account",
-		Long:  "Connect a service account. Choose the source with one of: --url (a remote MCP server), a command after -- (a local MCP server), --openapi (an HTTP API with an OpenAPI spec) or --kind command (your own programs; add their tools with pandora tool add).\n\nSecrets given only by name (--secret-env NAME, --header Name) are asked in the terminal without being shown, or read from stdin one per line. They are stored in the system keychain, never in the config file.",
+		Long:  "Connect a service account. Choose the source with one of: --url (a remote MCP server), a command after -- (a local MCP server), --openapi (an HTTP API with an OpenAPI spec), --http (an HTTP API without a spec; add its tools with pandora tool add) or --kind command (your own programs; add their tools with pandora tool add).\n\nSecrets given only by name (--secret-env NAME, --header Name) are asked in the terminal without being shown, or read from stdin one per line. They are stored in the system keychain, never in the config file.",
 		Example: `  # Remote MCP server; the OAuth login opens the browser
   pandora add todoist --as personal --url https://ai.todoist.net/mcp
 
@@ -45,8 +46,11 @@ func newAdd(d deps) *cobra.Command {
   # HTTP API described by an OpenAPI spec, with an API key header
   pandora add petstore --as default --openapi https://petstore3.swagger.io/api/v3/openapi.json --header "Authorization"
 
+  # HTTP API without a spec; then add its tools with pandora tool add
+  pandora add instagram --as store --http graph=https://graph.facebook.com --secret-env META_TOKEN
+
   # Your own programs or scripts; then add tools with pandora tool add
-  pandora add instagram --as store --kind command --secret-env META_TOKEN
+  pandora add git --as local --kind command
 
   # Another account of a service that already exists
   pandora add todoist --as work
@@ -74,7 +78,11 @@ func newAdd(d deps) *cobra.Command {
 				command = args[1:]
 			}
 
-			kind, err := resolveKind(kindFlag, rawURL, openapi, command)
+			kind, err := resolveKind(kindFlag, rawURL, openapi, httpFlags, command)
+			if err != nil {
+				return err
+			}
+			urls, err := parseHTTPURLs(httpFlags)
 			if err != nil {
 				return err
 			}
@@ -97,6 +105,7 @@ func newAdd(d deps) *cobra.Command {
 				Account:            account,
 				Kind:               kind,
 				URL:                rawURL,
+				URLs:               urls,
 				Command:            command,
 				Spec:               openapi,
 				OAuthClientID:      clientID,
@@ -190,6 +199,7 @@ func newAdd(d deps) *cobra.Command {
 	cmd.Flags().StringVar(&account, "as", "", "account alias")
 	cmd.Flags().StringVar(&rawURL, "url", "", "MCP server URL")
 	cmd.Flags().StringVar(&openapi, "openapi", "", "path or URL of an OpenAPI spec")
+	cmd.Flags().StringArrayVar(&httpFlags, "http", nil, "base URL of an HTTP API as name=URL; a URL alone is named api (repeatable)")
 	cmd.Flags().StringVar(&kindFlag, "kind", "", `service kind (only "command")`)
 	cmd.Flags().StringArrayVar(&envFlags, "env", nil, "environment variable KEY=VALUE (repeatable)")
 	cmd.Flags().StringArrayVar(&secretFlags, "secret-env", nil, "secret environment variable NAME or NAME=VALUE (repeatable)")
@@ -205,7 +215,7 @@ func newAdd(d deps) *cobra.Command {
 	return cmd
 }
 
-func resolveKind(kindFlag, rawURL, openapi string, command []string) (config.Kind, error) {
+func resolveKind(kindFlag, rawURL, openapi string, httpFlags []string, command []string) (config.Kind, error) {
 	if kindFlag != "" && kindFlag != string(config.KindCommand) {
 		return "", fmt.Errorf("unsupported kind %q: only %q is accepted", kindFlag, config.KindCommand)
 	}
@@ -224,14 +234,43 @@ func resolveKind(kindFlag, rawURL, openapi string, command []string) (config.Kin
 		sources++
 		kind = config.KindOpenAPI
 	}
+	if len(httpFlags) > 0 {
+		sources++
+		kind = config.KindHTTP
+	}
 	if kindFlag != "" {
 		sources++
 		kind = config.KindCommand
 	}
 	if sources > 1 {
-		return "", errors.New("use only one source: a command after --, --url, --openapi or --kind command")
+		return "", errors.New("use only one source: a command after --, --url, --openapi, --http or --kind command")
 	}
 	return kind, nil
+}
+
+func parseHTTPURLs(values []string) (map[string]string, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	urls := make(map[string]string, len(values))
+	for _, raw := range values {
+		name := "api"
+		target := raw
+		if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+			var ok bool
+			name, target, ok = strings.Cut(raw, "=")
+			name = strings.TrimSpace(name)
+			target = strings.TrimSpace(target)
+			if !ok || name == "" || target == "" {
+				return nil, fmt.Errorf("invalid --http %q: use name=URL or URL", raw)
+			}
+		}
+		if _, ok := urls[name]; ok {
+			return nil, fmt.Errorf("--http %s is given twice", name)
+		}
+		urls[name] = target
+	}
+	return urls, nil
 }
 
 func parseEnv(values []string) (map[string]string, error) {

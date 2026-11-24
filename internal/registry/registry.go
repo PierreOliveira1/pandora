@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/PierreOliveira1/pandora/internal/config"
+	"github.com/PierreOliveira1/pandora/internal/httptool"
 	"github.com/PierreOliveira1/pandora/internal/secrets"
 )
 
@@ -29,6 +30,7 @@ type AddInput struct {
 	Account            string
 	Kind               config.Kind
 	URL                string
+	URLs               map[string]string
 	Command            []string
 	Spec               string
 	Auth               config.AuthMode
@@ -133,7 +135,7 @@ func (r *Registry) Add(in AddInput) error {
 }
 
 func definesService(in AddInput) bool {
-	return in.Kind != "" || in.URL != "" || len(in.Command) > 0 || in.Spec != "" || in.Auth != "" ||
+	return in.Kind != "" || in.URL != "" || len(in.URLs) > 0 || len(in.Command) > 0 || in.Spec != "" || in.Auth != "" ||
 		in.OAuthClientID != "" || in.OAuthClientSecret != "" || len(in.OAuthScopes) > 0 || in.ServiceDescription != ""
 }
 
@@ -142,6 +144,9 @@ func sameDefinition(service *config.Service, in AddInput) bool {
 		return false
 	}
 	if in.URL != "" && in.URL != service.URL {
+		return false
+	}
+	if len(in.URLs) > 0 && !sameURLs(service.URLs, in.URLs) {
 		return false
 	}
 	if len(in.Command) > 0 && !slices.Equal(in.Command, service.Command) {
@@ -164,6 +169,10 @@ func differentDefinition(service string) error {
 }
 
 func supportsHeaders(kind config.Kind) bool {
+	return kind == config.KindMCPHTTP || kind == config.KindOpenAPI || kind == config.KindHTTP
+}
+
+func supportsOAuth(kind config.Kind) bool {
 	return kind == config.KindMCPHTTP || kind == config.KindOpenAPI
 }
 
@@ -183,15 +192,30 @@ func validateNewService(in AddInput) error {
 			return fmt.Errorf("service %q needs an openapi spec", in.Service)
 		}
 	case config.KindCommand:
+	case config.KindHTTP:
+		if len(in.URLs) == 0 {
+			return fmt.Errorf("service %s needs at least one URL: use --http name=URL", in.Service)
+		}
+		for _, name := range sortedKeys(in.URLs) {
+			if err := ValidateName(name); err != nil {
+				return err
+			}
+			if err := httptool.ValidateURL(in.URLs[name]); err != nil {
+				return err
+			}
+		}
 	case "":
-		return fmt.Errorf("service %q needs a kind: use mcp-stdio, mcp-http, openapi or command", in.Service)
+		return fmt.Errorf("service %q needs a kind: use mcp-stdio, mcp-http, openapi, command or http", in.Service)
 	default:
 		return fmt.Errorf("unknown service kind %q", in.Kind)
 	}
 
-	if (len(in.SecretHeaders) > 0 || in.OAuthClientID != "" || in.OAuthClientSecret != "" || len(in.OAuthScopes) > 0 || in.Auth == config.AuthOAuth) &&
-		!supportsHeaders(in.Kind) {
-		return fmt.Errorf("secret headers and oauth are not supported for %s services", in.Kind)
+	if len(in.SecretHeaders) > 0 && !supportsHeaders(in.Kind) {
+		return fmt.Errorf("secret headers are not supported for %s services", in.Kind)
+	}
+	if (in.OAuthClientID != "" || in.OAuthClientSecret != "" || len(in.OAuthScopes) > 0 || in.Auth == config.AuthOAuth) &&
+		!supportsOAuth(in.Kind) {
+		return fmt.Errorf("oauth is not supported for %s services", in.Kind)
 	}
 	return nil
 }
@@ -202,6 +226,7 @@ func newService(in AddInput) *config.Service {
 		Description: in.ServiceDescription,
 		Command:     in.Command,
 		URL:         in.URL,
+		URLs:        normalizedURLs(in.URLs),
 		Spec:        in.Spec,
 		Accounts:    map[string]*config.Account{},
 	}

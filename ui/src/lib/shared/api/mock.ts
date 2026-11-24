@@ -216,6 +216,26 @@ function seedServices(): ServiceView[] {
 					deny: []
 				}
 			]
+		},
+		{
+			name: 'shop-api',
+			kind: 'http',
+			description: 'Store orders API, called directly over HTTP.',
+			auth: 'none',
+			expose: 'compact',
+			default_account: 'store',
+			tools_known: true,
+			tool_count: 3,
+			accounts: [
+				{
+					name: 'store',
+					description: 'Main store.',
+					default: true,
+					readonly: false,
+					allow: [],
+					deny: []
+				}
+			]
 		}
 	];
 }
@@ -417,6 +437,36 @@ function seedCatalogs(): Map<string, ToolCatalog> {
 	catalogs.set('ops', {
 		fetched_at: fetchedAt,
 		tools: (ops?.command_tools ?? []).map(commandToolInfo)
+	});
+
+	catalogs.set('shop-api', {
+		fetched_at: fetchedAt,
+		tools: [
+			makeTool(
+				'list-orders',
+				'List the most recent orders.',
+				{ limit: { type: 'integer', description: 'How many orders to return.' } },
+				[],
+				{ readOnlyHint: true }
+			),
+			makeTool(
+				'cancel-order',
+				'Cancel an order by id.',
+				{ id: { type: 'string', description: 'Order id.' } },
+				['id']
+			),
+			makeTool(
+				'http_get',
+				"Read-only GET request to this service's API, to explore it before adding a tool with pandora tool add --http. URLs: api (https://shop.example.com/v1)",
+				{
+					path: { type: 'string' },
+					url: { type: 'string', enum: ['api'] },
+					query: { type: 'object' }
+				},
+				['path'],
+				{ readOnlyHint: true }
+			)
+		]
 	});
 
 	return catalogs;

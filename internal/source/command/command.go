@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/PierreOliveira1/pandora/internal/config"
+	"github.com/PierreOliveira1/pandora/internal/httptool"
 	"github.com/PierreOliveira1/pandora/internal/source"
 )
 
@@ -25,10 +27,16 @@ const (
 )
 
 type Source struct {
-	instructions string
-	env          map[string]string
-	tools        []*mcp.Tool
-	commands     map[string]*compiledTool
+	instructions  string
+	env           map[string]string
+	svc           *config.Service
+	secretEnv     map[string]bool
+	secretHeaders map[string]string
+	httpClient    *http.Client
+	tools         []*mcp.Tool
+	commands      map[string]*compiledTool
+	httpTools     map[string]config.CommandTool
+	httpGet       bool
 }
 
 type compiledTool struct {
@@ -52,13 +60,32 @@ func Open(ctx context.Context, spec source.Spec) (source.Source, error) {
 	if spec.Svc == nil {
 		return nil, fmt.Errorf("service %q has no command configuration", spec.Service)
 	}
+	httpClient := newHTTPClient(spec.HTTPClient, spec.Svc)
 	result := &Source{
-		instructions: spec.Svc.Description,
-		env:          cloneEnv(spec.Env),
-		tools:        make([]*mcp.Tool, 0, len(spec.Svc.Tools)),
-		commands:     make(map[string]*compiledTool, len(spec.Svc.Tools)),
+		instructions:  spec.Svc.Description,
+		env:           cloneEnv(spec.Env),
+		svc:           spec.Svc,
+		secretEnv:     secretEnvSet(spec.Acc),
+		secretHeaders: cloneEnv(spec.Headers),
+		httpClient:    httpClient,
+		tools:         make([]*mcp.Tool, 0, len(spec.Svc.Tools)+1),
+		commands:      make(map[string]*compiledTool, len(spec.Svc.Tools)),
+		httpTools:     make(map[string]config.CommandTool, len(spec.Svc.Tools)),
 	}
 	for _, tool := range spec.Svc.Tools {
+		if tool.HTTP != nil {
+			if err := httptool.Validate(tool, spec.Svc, result.secretEnv); err != nil {
+				return nil, err
+			}
+			result.tools = append(result.tools, &mcp.Tool{
+				Name:        tool.Name,
+				Description: tool.Description,
+				InputSchema: inputSchema(tool.Params),
+				Annotations: &mcp.ToolAnnotations{ReadOnlyHint: tool.ReadOnly || httpToolReadOnly(tool)},
+			})
+			result.httpTools[tool.Name] = tool
+			continue
+		}
 		compiled, err := compileTool(tool)
 		if err != nil {
 			return nil, err
@@ -71,11 +98,16 @@ func Open(ctx context.Context, spec source.Spec) (source.Source, error) {
 		})
 		result.commands[tool.Name] = compiled
 	}
+	if len(spec.Svc.URLs) > 0 {
+		result.tools = append(result.tools, httpGetTool(spec.Svc))
+		result.httpGet = true
+	}
 	return result, nil
 }
 
 func Register(openers source.Openers) {
 	openers[config.KindCommand] = Open
+	openers[config.KindHTTP] = Open
 }
 
 func (s *Source) ListTools(context.Context) ([]*mcp.Tool, error) {
@@ -91,30 +123,19 @@ func (s *Source) Close() error {
 }
 
 func (s *Source) CallTool(ctx context.Context, name string, args map[string]any) (*mcp.CallToolResult, error) {
+	if s.httpGet && name == httptool.GetTool {
+		return s.callHTTPGet(ctx, args)
+	}
+	if tool, ok := s.httpTools[name]; ok {
+		return s.callHTTPTool(ctx, tool, args)
+	}
 	tool, ok := s.commands[name]
 	if !ok {
 		return errorResult("unknown tool " + name), nil
 	}
-	values := map[string]argumentValue{}
-	names := make([]string, 0, len(tool.params))
-	for parameter := range tool.params {
-		names = append(names, parameter)
-	}
-	sort.Strings(names)
-	for _, parameter := range names {
-		definition := tool.params[parameter]
-		value, ok := args[parameter]
-		if !ok || value == nil {
-			if definition.Required {
-				return errorResult("missing required argument " + parameter), nil
-			}
-			continue
-		}
-		normalized, err := normalizeValue(definition.Type, value)
-		if err != nil {
-			return errorResult(fmt.Sprintf("argument %s %s", parameter, err)), nil
-		}
-		values[parameter] = normalized
+	values, _, failure := validateArguments(tool.params, args)
+	if failure != nil {
+		return failure, nil
 	}
 
 	argv := make([]string, 0, len(tool.template))
@@ -200,6 +221,33 @@ func (s *Source) CallTool(ctx context.Context, name string, args map[string]any)
 		return errorResult(truncate(text, int64(len(text)))), nil
 	}
 	return textResult(truncate(stdout.String(), stdout.total)), nil
+}
+
+func validateArguments(params map[string]config.CommandParam, args map[string]any) (map[string]argumentValue, map[string]any, *mcp.CallToolResult) {
+	values := map[string]argumentValue{}
+	original := map[string]any{}
+	names := make([]string, 0, len(params))
+	for parameter := range params {
+		names = append(names, parameter)
+	}
+	sort.Strings(names)
+	for _, parameter := range names {
+		definition := params[parameter]
+		value, ok := args[parameter]
+		if !ok || value == nil {
+			if definition.Required {
+				return nil, nil, errorResult("missing required argument " + parameter)
+			}
+			continue
+		}
+		normalized, err := normalizeValue(definition.Type, value)
+		if err != nil {
+			return nil, nil, errorResult(fmt.Sprintf("argument %s %s", parameter, err))
+		}
+		values[parameter] = normalized
+		original[parameter] = value
+	}
+	return values, original, nil
 }
 
 func (t *compiledTool) timeoutSeconds() int {

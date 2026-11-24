@@ -4,7 +4,7 @@ Pandora is one local CLI that connects many services and many accounts of the sa
 
 - [Getting started](getting-started.md): install Pandora, add a first account, connect an AI client and run a tool.
 - [Concepts](concepts.md): services, accounts, account refs, source kinds, the catalog cache, skill versus MCP, and the daemon.
-- [Sources](sources.md): add remote MCP servers, local MCP servers, OpenAPI specs and command tools.
+- [Sources](sources.md): add remote MCP servers, local MCP servers, OpenAPI specs, an HTTP API without a spec and command tools.
 - [Webhooks](webhooks.md): receive events from services, verify and test the receiver, and read or forward the event queue.
 - [Accounts and login](accounts-and-login.md): OAuth, static headers, secret storage, default accounts, rename and remove.
 - [AI clients](ai-clients.md): install the skill or the MCP server in each client, keep the skill in sync, and uninstall.

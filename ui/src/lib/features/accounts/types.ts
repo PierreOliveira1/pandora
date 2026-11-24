@@ -18,7 +18,8 @@ export const serviceKindLabels: Record<ServiceKind, string> = {
 	'mcp-http': 'Remote MCP',
 	'mcp-stdio': 'Local MCP',
 	openapi: 'OpenAPI',
-	command: 'Commands'
+	command: 'Commands',
+	http: 'HTTP API'
 };
 
 export function serviceKindLabel(kind: ServiceKind): string {
