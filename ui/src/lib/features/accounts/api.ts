@@ -45,6 +45,35 @@ export function renameService(service: string, name: string): Promise<void> {
 	return api.renameService(service, name);
 }
 
+export function setServiceUrl(service: string, name: string, url: string): Promise<void> {
+	return api.setServiceUrl(service, name, url);
+}
+
+export function removeServiceUrl(service: string, name: string): Promise<void> {
+	return api.removeServiceUrl(service, name);
+}
+
+export function setServiceHeader(service: string, name: string, template: string): Promise<void> {
+	return api.setServiceHeader(service, name, template);
+}
+
+export function removeServiceHeader(service: string, name: string): Promise<void> {
+	return api.removeServiceHeader(service, name);
+}
+
+export function setAccountEnv(
+	service: string,
+	account: string,
+	name: string,
+	value: string
+): Promise<void> {
+	return api.setAccountEnv(service, account, name, value);
+}
+
+export function unsetAccountEnv(service: string, account: string, name: string): Promise<void> {
+	return api.unsetAccountEnv(service, account, name);
+}
+
 export function makeDefaultAccount(service: string, account: string): Promise<void> {
 	return api.setDefaultAccount(service, account);
 }

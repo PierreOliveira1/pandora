@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ActionMenu, Button, Icon, Pill, Spinner, showToast } from '#lib/shared/ui/index.ts';
 	import { formatRelativeTime } from '#lib/shared/utils/format.ts';
-	import type { AccountView, AuthMode, StatusInfo, WebhookInfo } from '../types.ts';
+	import type { AccountView, AuthMode, ServiceKind, StatusInfo, WebhookInfo } from '../types.ts';
 
 	type MenuItem = {
 		id: string;
@@ -12,6 +12,7 @@
 
 	let {
 		serviceName,
+		serviceKind,
 		account,
 		status,
 		statusLoading,
@@ -23,10 +24,12 @@
 		onSetDefault,
 		onLogout,
 		onRules,
+		onValues,
 		webhook,
 		onRemoveWebhook
 	}: {
 		serviceName: string;
+		serviceKind: ServiceKind;
 		account: AccountView;
 		status: StatusInfo | undefined;
 		statusLoading: boolean;
@@ -38,6 +41,7 @@
 		onSetDefault: () => void;
 		onLogout: () => void;
 		onRules: () => void;
+		onValues: () => void;
 		webhook?: WebhookInfo;
 		onRemoveWebhook: () => void;
 	} = $props();
@@ -61,6 +65,9 @@
 			items.push({ id: 'default', label: 'Set as default', onselect: onSetDefault });
 		}
 		items.push({ id: 'rules', label: 'Rules', onselect: onRules });
+		if (serviceKind === 'http' || serviceKind === 'command' || serviceKind === 'mcp-stdio') {
+			items.push({ id: 'values', label: 'Values', onselect: onValues });
+		}
 		items.push({ id: 'rename', label: 'Rename', onselect: onRename });
 		if (auth === 'oauth') {
 			items.push({ id: 'logout', label: 'Log out', onselect: onLogout });

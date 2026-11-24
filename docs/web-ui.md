@@ -32,13 +32,15 @@ The UI is embedded in the binary. You do not run a separate frontend server.
 
 The first screen lists every service and its accounts, with the connection status, default marker and read-only marker. From here you can:
 
-- Add an account from a remote MCP server, a local MCP server, an OpenAPI document or a command service.
+- Add an account from a remote MCP server, a local MCP server, an OpenAPI document, an HTTP API without a spec or a command service.
 - Log in or log out of an OAuth account.
 - Set an account as the default.
 - Open the rules panel to change read-only, allow and deny rules.
 - Rename or remove an account, or rename and remove a whole service.
+- For an HTTP service, open URLs and headers from the service menu to add, replace or remove base URLs and service headers.
+- Open Values from the account menu to set or remove the account's plain values. Secret values are listed by name only.
 
-Add account asks for the same information as `pandora add`, including OAuth client ID, scopes, headers, environment variables and secret environment variables. Secrets are saved to the configured secret store, not to the config file.
+Add account asks for the same information as `pandora add`, including OAuth client ID, scopes, headers, base URLs, environment variables and secret environment variables. Secrets are saved to the configured secret store, not to the config file. For an HTTP API you can also add service headers such as `Authorization: Bearer {{env.API_TOKEN}}`; the config keeps only the template.
 
 An account with a webhook shows a `webhook` pill. Below it, the row shows the Callback URL with a Copy button and the last event time, or the hint `pandora tunnel use tailscale` when there is no public address yet. The account menu has Remove webhook, which deletes the webhook and its secrets; remove the Callback URL in the service's settings too.
 
@@ -46,9 +48,9 @@ An account with a webhook shows a `webhook` pill. Below it, the row shows the Ca
 
 ![Tool panel](images/tool-panel.png)
 
-Tools lists each service and the tools it exposes. Select a tool to read its description and arguments, enter JSON arguments and run it. The result appears in the panel.
+Tools lists each service and the tools it exposes. Select a tool to read its description and arguments, enter JSON arguments and run it. The result appears in the panel. A JSON result is shown formatted, with a switch to the raw text and a Copy button.
 
-For a command service you can also add a tool with its parameters and command, or remove an existing tool. The rules panel is available from this screen too.
+For a command service you can also add a tool with its parameters and command, or remove an existing tool. For an HTTP service, Add HTTP tool builds a request: method, base URL, path, query, JSON or form body and request headers, with `{{parameter}}` and `{{env.NAME}}` placeholders and a preview of the final URL. The panel of an HTTP tool shows its request. The rules panel is available from this screen too.
 
 ### Activity
 

@@ -217,5 +217,52 @@ export const api = {
 			'DELETE',
 			`/api/services/${encodeURIComponent(service)}/command-tools/${encodeURIComponent(name)}`
 		);
+	},
+
+	setServiceUrl(service: string, name: string, url: string): Promise<void> {
+		return request<void>(
+			'PUT',
+			`/api/services/${encodeURIComponent(service)}/urls/${encodeURIComponent(name)}`,
+			{ url }
+		);
+	},
+
+	removeServiceUrl(service: string, name: string): Promise<void> {
+		return request<void>(
+			'DELETE',
+			`/api/services/${encodeURIComponent(service)}/urls/${encodeURIComponent(name)}`
+		);
+	},
+
+	setServiceHeader(service: string, name: string, template: string): Promise<void> {
+		return request<void>(
+			'PUT',
+			`/api/services/${encodeURIComponent(service)}/headers/${encodeURIComponent(name)}`,
+			{ template }
+		);
+	},
+
+	removeServiceHeader(service: string, name: string): Promise<void> {
+		return request<void>(
+			'DELETE',
+			`/api/services/${encodeURIComponent(service)}/headers/${encodeURIComponent(name)}`
+		);
+	},
+
+	setAccountEnv(service: string, account: string, name: string, value: string): Promise<void> {
+		return request<void>(
+			'PUT',
+			`${accountPath(service, account)}/env/${encodeURIComponent(name)}`,
+			{
+				value
+			}
+		);
+	},
+
+	unsetAccountEnv(service: string, account: string, name: string): Promise<void> {
+		return request<void>(
+			'DELETE',
+			`${accountPath(service, account)}/env/${encodeURIComponent(name)}`
+		);
 	}
 };

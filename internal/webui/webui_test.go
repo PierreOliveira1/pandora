@@ -315,6 +315,153 @@ func TestAnAccountAddedThroughTheAPIShowsUpInTheOverviewAndItsSecretsNeverComeBa
 	}
 }
 
+func TestAnHTTPServiceAndToolCanBeCreatedThroughTheAPI(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+	add := `{"service":"shop","account":"store","kind":"http","urls":{"api":"https://shop.example.com/v1"},"env":{"STORE_ID":"42"},"secret_env":{"TOKEN":"s3cr3t"}}`
+	status, body := f.do(t, http.MethodPost, "/api/accounts", add, csrf())
+	if status != http.StatusCreated {
+		t.Fatalf("add status = %d, want 201: %s", status, body)
+	}
+	if strings.Contains(body, "s3cr3t") {
+		t.Fatal("the add response contains the secret")
+	}
+
+	tool := `{"name":"list-orders","description":"List orders.","http":{"url":"api","method":"GET","path":"/stores/{{env.STORE_ID}}/orders","query":{"limit":"{{limit}}"}},"params":{"limit":{"type":"integer"}},"timeout_sec":60}`
+	status, body = f.do(t, http.MethodPost, "/api/services/shop/command-tools", tool, csrf())
+	if status != http.StatusCreated {
+		t.Fatalf("add tool status = %d, want 201: %s", status, body)
+	}
+
+	overview, _ := fetchOverview(t, f)
+	service := serviceForOverview(t, overview, "shop")
+	if service.URLs["api"] != "https://shop.example.com/v1" {
+		t.Fatalf("URLs = %v, want the API URL", service.URLs)
+	}
+	created := commandToolForOverview(t, service, "list-orders")
+	if created.HTTP == nil {
+		t.Fatal("the tool has no HTTP request in the overview")
+	}
+	if created.HTTP.URL != "api" || created.HTTP.Method != http.MethodGet || created.HTTP.Path != "/stores/{{env.STORE_ID}}/orders" {
+		t.Fatalf("HTTP = %+v, want the configured request", created.HTTP)
+	}
+	if created.HTTP.Query["limit"] != "{{limit}}" {
+		t.Fatalf("query = %v, want the limit template", created.HTTP.Query)
+	}
+	if !created.ReadOnly {
+		t.Fatal("a GET tool must be read-only")
+	}
+}
+
+func TestServiceURLsAndHeadersCanBeManagedThroughTheAPI(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+	add := `{"service":"shop","account":"store","kind":"http","urls":{"api":"https://shop.example.com/v1","other":"https://other.example.com"}}`
+	status, body := f.do(t, http.MethodPost, "/api/accounts", add, csrf())
+	if status != http.StatusCreated {
+		t.Fatalf("add status = %d, want 201: %s", status, body)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/services/shop/urls/other", `{"url":"https://other.example.com/v2/"}`, csrf())
+	if status != http.StatusOK {
+		t.Fatalf("set URL status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	overview, _ := fetchOverview(t, f)
+	service := serviceForOverview(t, overview, "shop")
+	if service.URLs["other"] != "https://other.example.com/v2" {
+		t.Fatalf("URLs = %v, want the normalized URL", service.URLs)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/services/shop/headers/Authorization", `{"template":"Bearer {{env.STORE_ID}}"}`, csrf())
+	if status != http.StatusOK {
+		t.Fatalf("set header status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	overview, _ = fetchOverview(t, f)
+	service = serviceForOverview(t, overview, "shop")
+	if service.Headers["Authorization"] != "Bearer {{env.STORE_ID}}" {
+		t.Fatalf("headers = %v, want the configured template", service.Headers)
+	}
+
+	status, body = f.do(t, http.MethodDelete, "/api/services/shop/headers/Authorization", "", csrf())
+	if status != http.StatusOK {
+		t.Fatalf("remove header status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	overview, _ = fetchOverview(t, f)
+	service = serviceForOverview(t, overview, "shop")
+	if _, ok := service.Headers["Authorization"]; ok {
+		t.Fatalf("headers = %v, want Authorization removed", service.Headers)
+	}
+
+	status, body = f.do(t, http.MethodDelete, "/api/services/shop/urls/other", "", csrf())
+	if status != http.StatusOK {
+		t.Fatalf("remove URL status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	status, body = f.do(t, http.MethodDelete, "/api/services/shop/urls/api", "", csrf())
+	if status != http.StatusBadRequest {
+		t.Fatalf("remove last URL status = %d, want 400: %s", status, body)
+	}
+	if !strings.Contains(body, "needs at least one URL") {
+		t.Fatalf("remove last URL body = %q, want the last URL error", body)
+	}
+}
+
+func TestAccountEnvIsVisibleAndSecretsStayHidden(t *testing.T) {
+	f := newUIFixture(t)
+	f.login(t)
+	add := `{"service":"shop","account":"store","kind":"http","urls":{"api":"https://shop.example.com/v1"},"env":{"VISIBLE":"yes"},"secret_env":{"Z_TOKEN":"s3cr3t","A_TOKEN":"also-secret"},"secret_headers":{"X-Zeta":"zeta-secret","X-Alpha":"alpha-secret"}}`
+	status, body := f.do(t, http.MethodPost, "/api/accounts", add, csrf())
+	if status != http.StatusCreated {
+		t.Fatalf("add status = %d, want 201: %s", status, body)
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/accounts/shop/store/env/STORE_ID", `{"value":"42"}`, csrf())
+	if status != http.StatusOK {
+		t.Fatalf("set env status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	overview, body := fetchOverview(t, f)
+	service := serviceForOverview(t, overview, "shop")
+	account := accountForOverview(t, service, "store")
+	if account.Env["VISIBLE"] != "yes" || account.Env["STORE_ID"] != "42" {
+		t.Fatalf("env = %v, want the visible values", account.Env)
+	}
+	if strings.Join(account.SecretEnv, ",") != "A_TOKEN,Z_TOKEN" {
+		t.Fatalf("secret_env = %v, want sorted names", account.SecretEnv)
+	}
+	if strings.Join(account.SecretHeaders, ",") != "X-Alpha,X-Zeta" {
+		t.Fatalf("secret_headers = %v, want sorted names", account.SecretHeaders)
+	}
+	for _, secret := range []string{"s3cr3t", "also-secret", "zeta-secret", "alpha-secret"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("the overview contains the secret %q", secret)
+		}
+	}
+
+	status, body = f.do(t, http.MethodPut, "/api/accounts/shop/store/env/A_TOKEN", `{"value":"changed"}`, csrf())
+	if status != http.StatusBadRequest {
+		t.Fatalf("set secret env status = %d, want 400: %s", status, body)
+	}
+	if !strings.Contains(body, "is a secret") {
+		t.Fatalf("set secret env body = %q, want the secret error", body)
+	}
+
+	status, body = f.do(t, http.MethodDelete, "/api/accounts/shop/store/env/STORE_ID", "", csrf())
+	if status != http.StatusOK {
+		t.Fatalf("unset env status = %d, want 200: %s", status, body)
+	}
+	requireOK(t, body)
+	overview, _ = fetchOverview(t, f)
+	service = serviceForOverview(t, overview, "shop")
+	account = accountForOverview(t, service, "store")
+	if _, ok := account.Env["STORE_ID"]; ok {
+		t.Fatalf("env = %v, want STORE_ID removed", account.Env)
+	}
+}
+
 func TestAToolCanBeTestedFromTheAPI(t *testing.T) {
 	f := newUIFixture(t)
 	f.login(t)
@@ -641,4 +788,57 @@ func (f *uiFixture) do(t *testing.T, method, path, body string, headers map[stri
 
 func csrf() map[string]string {
 	return map[string]string{"X-Pandora": "1"}
+}
+
+func requireOK(t *testing.T, body string) {
+	t.Helper()
+	if !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("body = %q, want ok", body)
+	}
+}
+
+func fetchOverview(t *testing.T, f *uiFixture) (core.Overview, string) {
+	t.Helper()
+	status, body := f.do(t, http.MethodGet, "/api/overview", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("overview status = %d, want 200: %s", status, body)
+	}
+	var overview core.Overview
+	if err := json.Unmarshal([]byte(body), &overview); err != nil {
+		t.Fatalf("decoding overview: %v", err)
+	}
+	return overview, body
+}
+
+func serviceForOverview(t *testing.T, overview core.Overview, name string) core.ServiceView {
+	t.Helper()
+	for _, service := range overview.Services {
+		if service.Name == name {
+			return service
+		}
+	}
+	t.Fatalf("service %q not found in %+v", name, overview.Services)
+	return core.ServiceView{}
+}
+
+func accountForOverview(t *testing.T, service core.ServiceView, name string) core.AccountView {
+	t.Helper()
+	for _, account := range service.Accounts {
+		if account.Name == name {
+			return account
+		}
+	}
+	t.Fatalf("account %q not found in %+v", name, service.Accounts)
+	return core.AccountView{}
+}
+
+func commandToolForOverview(t *testing.T, service core.ServiceView, name string) config.CommandTool {
+	t.Helper()
+	for _, tool := range service.CommandTools {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool %q not found in %+v", name, service.CommandTools)
+	return config.CommandTool{}
 }

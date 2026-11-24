@@ -8,12 +8,15 @@ import (
 )
 
 type AccountView struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Default     bool     `json:"default"`
-	ReadOnly    bool     `json:"readonly"`
-	Allow       []string `json:"allow"`
-	Deny        []string `json:"deny"`
+	Name          string            `json:"name"`
+	Description   string            `json:"description,omitempty"`
+	Default       bool              `json:"default"`
+	ReadOnly      bool              `json:"readonly"`
+	Allow         []string          `json:"allow"`
+	Deny          []string          `json:"deny"`
+	Env           map[string]string `json:"env,omitempty"`
+	SecretEnv     []string          `json:"secret_env,omitempty"`
+	SecretHeaders []string          `json:"secret_headers,omitempty"`
 }
 
 type ServiceView struct {
@@ -25,6 +28,8 @@ type ServiceView struct {
 	URL            string               `json:"url,omitempty"`
 	Command        []string             `json:"command,omitempty"`
 	Spec           string               `json:"spec,omitempty"`
+	URLs           map[string]string    `json:"urls,omitempty"`
+	Headers        map[string]string    `json:"headers,omitempty"`
 	DefaultAccount string               `json:"default_account,omitempty"`
 	ToolsKnown     bool                 `json:"tools_known"`
 	ToolCount      int                  `json:"tool_count"`
@@ -55,12 +60,15 @@ func (c *Core) Overview(ctx context.Context) (Overview, error) {
 		for _, accountName := range sortedMapKeys(service.Accounts) {
 			account := service.Accounts[accountName]
 			accounts = append(accounts, AccountView{
-				Name:        accountName,
-				Description: account.Description,
-				Default:     accountName == service.DefaultAccount,
-				ReadOnly:    account.ReadOnly,
-				Allow:       sortedRules(account.Allow),
-				Deny:        sortedRules(account.Deny),
+				Name:          accountName,
+				Description:   account.Description,
+				Default:       accountName == service.DefaultAccount,
+				ReadOnly:      account.ReadOnly,
+				Allow:         sortedRules(account.Allow),
+				Deny:          sortedRules(account.Deny),
+				Env:           copyStringMap(account.Env),
+				SecretEnv:     sortedNames(account.SecretEnv),
+				SecretHeaders: sortedNames(account.SecretHeaders),
 			})
 		}
 
@@ -85,6 +93,8 @@ func (c *Core) Overview(ctx context.Context) (Overview, error) {
 			URL:            service.URL,
 			Command:        command,
 			Spec:           service.Spec,
+			URLs:           copyStringMap(service.URLs),
+			Headers:        copyStringMap(service.Headers),
 			DefaultAccount: service.DefaultAccount,
 			CommandTools:   commandTools,
 			Accounts:       accounts,
@@ -117,6 +127,23 @@ func sortedRules(rules []string) []string {
 	if out == nil {
 		return []string{}
 	}
+	sort.Strings(out)
+	return out
+}
+
+func copyStringMap(values map[string]string) map[string]string {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for name, value := range values {
+		out[name] = value
+	}
+	return out
+}
+
+func sortedNames(values []string) []string {
+	out := append([]string(nil), values...)
 	sort.Strings(out)
 	return out
 }

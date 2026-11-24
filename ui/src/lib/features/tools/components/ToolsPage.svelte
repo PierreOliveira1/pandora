@@ -13,6 +13,7 @@
 	import { loadOverview, loadTools } from '../api.ts';
 	import type { Overview, ServiceView, ToolCatalog, ToolInfo } from '../types.ts';
 	import AddCommandToolPanel from './AddCommandToolPanel.svelte';
+	import AddHTTPToolPanel from './AddHTTPToolPanel.svelte';
 	import ToolPanel from './ToolPanel.svelte';
 
 	let { onOpenRules }: { onOpenRules: (ref: string) => void } = $props();
@@ -28,6 +29,7 @@
 	let refreshing = $state(false);
 	let selectedTool = $state<ToolInfo | null>(null);
 	let addOpen = $state(false);
+	let addHttpOpen = $state(false);
 
 	const services = $derived(overview?.services ?? []);
 	const selectedService = $derived(
@@ -115,7 +117,18 @@
 
 	function addCreated(): void {
 		addOpen = false;
+		addHttpOpen = false;
 		void loadCatalog(true, true);
+	}
+
+	function openCommandTool(): void {
+		addOpen = true;
+		addHttpOpen = false;
+	}
+
+	function openHttpTool(): void {
+		addHttpOpen = true;
+		addOpen = false;
 	}
 
 	function toolRemoved(): void {
@@ -227,9 +240,12 @@
 			</p>
 
 			{#if selectedService?.kind === 'command'}
-				<Button variant="secondary" icon="plus" onclick={() => (addOpen = true)}>
-					Add command tool
-				</Button>
+				<Button variant="secondary" icon="plus" onclick={openCommandTool}>Add command tool</Button>
+			{:else if selectedService?.kind === 'http'}
+				<div class="flex flex-wrap items-center gap-2">
+					<Button variant="secondary" icon="plus" onclick={openHttpTool}>Add HTTP tool</Button>
+					<Button variant="ghost" icon="plus" onclick={openCommandTool}>Add command tool</Button>
+				</div>
 			{/if}
 		</div>
 
@@ -315,6 +331,14 @@
 	<AddCommandToolPanel
 		service={selectedService}
 		onclose={() => (addOpen = false)}
+		oncreated={addCreated}
+	/>
+{/if}
+
+{#if addHttpOpen && selectedService}
+	<AddHTTPToolPanel
+		service={selectedService}
+		onclose={() => (addHttpOpen = false)}
 		oncreated={addCreated}
 	/>
 {/if}

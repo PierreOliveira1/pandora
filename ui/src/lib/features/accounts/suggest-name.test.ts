@@ -9,6 +9,7 @@ describe('service name suggestion', () => {
 		expect(suggestServiceName({ kind: 'mcp-http', url: 'https://mcp.linear.app/sse' })).toBe(
 			'linear'
 		);
+		expect(suggestServiceName({ kind: 'http', url: 'https://shop.example.com/v1' })).toBe('shop');
 		expect(
 			suggestServiceName({ kind: 'openapi', spec: 'https://api.github.com/openapi.json' })
 		).toBe('github');

@@ -31,6 +31,7 @@ function renderRow(status: StatusInfo): void {
 		target,
 		props: {
 			serviceName: 'todoist',
+			serviceKind: 'mcp-http',
 			account,
 			status,
 			statusLoading: false,
@@ -42,6 +43,7 @@ function renderRow(status: StatusInfo): void {
 			onSetDefault: () => {},
 			onLogout: () => {},
 			onRules: () => {},
+			onValues: () => {},
 			onRemoveWebhook: () => {}
 		}
 	});

@@ -24,6 +24,8 @@
 		onSetDefault,
 		onLogout,
 		onRules,
+		onValues,
+		onUrlsAndHeaders,
 		webhooks,
 		onRemoveWebhook
 	}: {
@@ -39,6 +41,8 @@
 		onSetDefault: (account: AccountView) => void;
 		onLogout: (account: AccountView) => void;
 		onRules: (account: AccountView) => void;
+		onValues: (account: AccountView) => void;
+		onUrlsAndHeaders: () => void;
 		webhooks: Record<string, WebhookInfo>;
 		onRemoveWebhook: (account: AccountView) => void;
 	} = $props();
@@ -49,15 +53,29 @@
 			: 'Tools not loaded'
 	);
 
-	const menuItems = $derived.by((): MenuItem[] => [
-		{ id: 'rename', label: 'Rename service', onselect: onRenameService },
-		{
-			id: 'remove',
-			label: 'Remove service',
-			tone: 'danger',
-			onselect: onRemoveService
+	const menuItems = $derived.by((): MenuItem[] => {
+		const items: MenuItem[] = [];
+
+		if (service.kind === 'http') {
+			items.push({
+				id: 'urls-headers',
+				label: 'URLs and headers',
+				onselect: onUrlsAndHeaders
+			});
 		}
-	]);
+
+		items.push(
+			{ id: 'rename', label: 'Rename service', onselect: onRenameService },
+			{
+				id: 'remove',
+				label: 'Remove service',
+				tone: 'danger',
+				onselect: onRemoveService
+			}
+		);
+
+		return items;
+	});
 </script>
 
 <section
@@ -87,6 +105,7 @@
 				<li class="border-t border-zinc-200 dark:border-zinc-800">
 					<AccountRow
 						serviceName={service.name}
+						serviceKind={service.kind}
 						{account}
 						status={statuses[ref]}
 						{statusLoading}
@@ -98,6 +117,7 @@
 						onSetDefault={() => onSetDefault(account)}
 						onLogout={() => onLogout(account)}
 						onRules={() => onRules(account)}
+						onValues={() => onValues(account)}
 						webhook={webhooks[ref]}
 						onRemoveWebhook={() => onRemoveWebhook(account)}
 					/>

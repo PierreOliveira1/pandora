@@ -69,10 +69,23 @@ export type CommandParam = {
 	required?: boolean;
 };
 
+export type HttpToolMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export type HttpRequestSpec = {
+	url?: string;
+	method: HttpToolMethod;
+	path: string;
+	query?: Record<string, string>;
+	headers?: Record<string, string>;
+	form?: Record<string, string>;
+	json?: Record<string, string>;
+};
+
 export type CommandToolView = {
 	name: string;
 	description?: string;
-	command: string[];
+	command?: string[];
+	http?: HttpRequestSpec;
 	params?: Record<string, CommandParam>;
 	readonly?: boolean;
 	timeout_sec?: number;
@@ -81,7 +94,8 @@ export type CommandToolView = {
 export type CommandToolInput = {
 	name: string;
 	description?: string;
-	command: string[];
+	command?: string[];
+	http?: HttpRequestSpec;
 	params?: Record<string, CommandParam>;
 	readonly?: boolean;
 	timeout_sec?: number;
@@ -157,6 +171,9 @@ export type AccountView = {
 	readonly: boolean;
 	allow: string[];
 	deny: string[];
+	env?: Record<string, string>;
+	secret_env?: string[];
+	secret_headers?: string[];
 };
 
 export type ServiceView = {
@@ -168,6 +185,8 @@ export type ServiceView = {
 	url?: string;
 	command?: string[];
 	spec?: string;
+	urls?: Record<string, string>;
+	headers?: Record<string, string>;
 	default_account?: string;
 	tools_known: boolean;
 	tool_count: number;
@@ -206,6 +225,7 @@ export type AddAccountInput = {
 	env?: Record<string, string>;
 	secret_env?: Record<string, string>;
 	secret_headers?: Record<string, string>;
+	urls?: Record<string, string>;
 };
 
 export type AddAccountResponse = {

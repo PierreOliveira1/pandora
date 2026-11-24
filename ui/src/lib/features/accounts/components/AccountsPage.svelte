@@ -17,10 +17,12 @@
 		waitForLogin
 	} from '../api.ts';
 	import type { AccountView, Overview, ServiceView, StatusInfo, WebhookInfo } from '../types.ts';
+	import AccountValuesPanel from './AccountValuesPanel.svelte';
 	import AddAccountPanel from './AddAccountPanel.svelte';
 	import RenameDialog from './RenameDialog.svelte';
 	import RulesPanel from './RulesPanel.svelte';
 	import ServiceCard from './ServiceCard.svelte';
+	import ServiceHTTPPanel from './ServiceHTTPPanel.svelte';
 
 	type RenameTarget =
 		| { type: 'service'; service: ServiceView }
@@ -44,6 +46,8 @@
 	let webhookRemoveTarget = $state<WebhookTarget | null>(null);
 	let removingWebhook = $state(false);
 	let rulesTarget = $state<string | null>(null);
+	let httpTarget = $state<string | null>(null);
+	let valuesTarget = $state<string | null>(null);
 
 	const removeMessage = $derived.by(() => {
 		if (!removeTarget) return '';
@@ -67,6 +71,23 @@
 			? renameTarget.service.name
 			: (renameTarget?.account.name ?? '')
 	);
+
+	const httpService = $derived(
+		httpTarget ? (overview?.services.find((service) => service.name === httpTarget) ?? null) : null
+	);
+
+	const valuesAccount = $derived.by(() => {
+		if (!valuesTarget) return null;
+
+		for (const service of overview?.services ?? []) {
+			const account = service.accounts.find(
+				(candidate) => `${service.name}/${candidate.name}` === valuesTarget
+			);
+			if (account) return { service, account };
+		}
+
+		return null;
+	});
 
 	onMount(() => {
 		void loadInitial();
@@ -338,6 +359,8 @@
 					onSetDefault={(account) => void setDefault(service, account)}
 					onLogout={(account) => void logout(service, account)}
 					onRules={(account) => (rulesTarget = `${service.name}/${account.name}`)}
+					onValues={(account) => (valuesTarget = `${service.name}/${account.name}`)}
+					onUrlsAndHeaders={() => (httpTarget = service.name)}
 					{webhooks}
 					onRemoveWebhook={(account) => (webhookRemoveTarget = { service, account })}
 				/>
@@ -390,6 +413,23 @@
 			rulesTarget = null;
 			void refreshAll();
 		}}
+	/>
+{/if}
+
+{#if httpService}
+	<ServiceHTTPPanel
+		service={httpService}
+		onclose={() => (httpTarget = null)}
+		onchanged={refreshAll}
+	/>
+{/if}
+
+{#if valuesAccount}
+	<AccountValuesPanel
+		serviceName={valuesAccount.service.name}
+		account={valuesAccount.account}
+		onclose={() => (valuesTarget = null)}
+		onchanged={refreshAll}
 	/>
 {/if}
 

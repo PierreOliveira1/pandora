@@ -223,9 +223,42 @@ function seedServices(): ServiceView[] {
 			description: 'Store orders API, called directly over HTTP.',
 			auth: 'none',
 			expose: 'compact',
+			urls: { api: 'https://shop.example.com/v1' },
+			headers: { Authorization: 'Bearer {{env.SHOP_TOKEN}}' },
 			default_account: 'store',
 			tools_known: true,
 			tool_count: 3,
+			command_tools: [
+				{
+					name: 'cancel-order',
+					description: 'Cancel an order by id.',
+					http: {
+						url: 'api',
+						method: 'POST',
+						path: '/stores/{{env.STORE_ID}}/orders/{{id}}/cancel',
+						json: { reason: '{{reason}}' }
+					},
+					params: {
+						id: { type: 'string', required: true, description: 'Order id.' },
+						reason: { type: 'string', description: 'Why the order is cancelled.' }
+					},
+					readonly: false,
+					timeout_sec: 60
+				},
+				{
+					name: 'list-orders',
+					description: 'List the most recent orders.',
+					http: {
+						url: 'api',
+						method: 'GET',
+						path: '/stores/{{env.STORE_ID}}/orders',
+						query: { limit: '{{limit}}', fields: 'id,total,status' }
+					},
+					params: { limit: { type: 'integer', description: 'How many orders to return.' } },
+					readonly: true,
+					timeout_sec: 60
+				}
+			],
 			accounts: [
 				{
 					name: 'store',
@@ -233,7 +266,10 @@ function seedServices(): ServiceView[] {
 					default: true,
 					readonly: false,
 					allow: [],
-					deny: []
+					deny: [],
+					env: { STORE_ID: '42' },
+					secret_env: ['SHOP_TOKEN'],
+					secret_headers: []
 				}
 			]
 		}
@@ -439,22 +475,11 @@ function seedCatalogs(): Map<string, ToolCatalog> {
 		tools: (ops?.command_tools ?? []).map(commandToolInfo)
 	});
 
+	const shop = services.find((service) => service.name === 'shop-api');
 	catalogs.set('shop-api', {
 		fetched_at: fetchedAt,
 		tools: [
-			makeTool(
-				'list-orders',
-				'List the most recent orders.',
-				{ limit: { type: 'integer', description: 'How many orders to return.' } },
-				[],
-				{ readOnlyHint: true }
-			),
-			makeTool(
-				'cancel-order',
-				'Cancel an order by id.',
-				{ id: { type: 'string', description: 'Order id.' } },
-				['id']
-			),
+			...(shop?.command_tools ?? []).map(commandToolInfo),
 			makeTool(
 				'http_get',
 				"Read-only GET request to this service's API, to explore it before adding a tool with pandora tool add --http. URLs: api (https://shop.example.com/v1)",
@@ -940,8 +965,170 @@ function serviceAuth(input: AddAccountInput, kind: ServiceKind): AuthMode {
 	return 'none';
 }
 
+function normalizedUrls(urls: Record<string, string> | undefined): Record<string, string> {
+	const entries = Object.entries(urls ?? {});
+	if (entries.length === 0) {
+		throw new ApiError('An HTTP service needs at least one URL.', 400);
+	}
+	const result: Record<string, string> = {};
+	for (const [name, raw] of entries) {
+		validateName(name, 'URL name');
+		result[name] = checkedBaseUrl(raw);
+	}
+	return result;
+}
+
+function checkedBaseUrl(raw: string): string {
+	let parsed: URL;
+	try {
+		parsed = new URL(raw.trim());
+	} catch {
+		throw new ApiError('invalid URL: check the scheme and host', 400);
+	}
+	const local = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
+	if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local)) {
+		throw new ApiError('the URL must use https (http is allowed only for localhost)', 400);
+	}
+	if (parsed.search || parsed.hash) {
+		throw new ApiError('the URL cannot contain a query or a fragment', 400);
+	}
+	return raw.trim().replace(/\/+$/, '');
+}
+
+function httpServiceOrThrow(serviceName: string): ServiceView {
+	const service = findService(serviceName);
+	if (!service) throw new ApiError(`unknown service "${serviceName}"`, 404);
+	if (service.kind !== 'http') {
+		throw new ApiError(
+			`service ${serviceName} is not an HTTP service: create one with pandora add ${serviceName} --as <account> --http name=URL`,
+			400
+		);
+	}
+	return service;
+}
+
+async function handleSetServiceUrl(
+	serviceName: string,
+	name: string,
+	body: unknown
+): Promise<void> {
+	await delay(300);
+	const service = httpServiceOrThrow(serviceName);
+	validateName(name, 'URL name');
+	const raw =
+		typeof (body as { url?: unknown })?.url === 'string' ? (body as { url: string }).url : '';
+	service.urls = { ...(service.urls ?? {}), [name]: checkedBaseUrl(raw) };
+	refreshCommandCatalog(service);
+}
+
+async function handleRemoveServiceUrl(serviceName: string, name: string): Promise<void> {
+	await delay(300);
+	const service = httpServiceOrThrow(serviceName);
+	const urls = { ...(service.urls ?? {}) };
+	if (!(name in urls))
+		throw new ApiError(`URL ${name} does not exist in service ${serviceName}`, 404);
+	if (Object.keys(urls).length === 1) {
+		throw new ApiError(
+			`an HTTP service needs at least one URL; remove the service with pandora remove ${serviceName} --yes instead`,
+			400
+		);
+	}
+	const user = (service.command_tools ?? []).find((tool) => tool.http?.url === name);
+	if (user) throw new ApiError(`tool ${user.name} uses URL ${name}: remove the tool first`, 400);
+	delete urls[name];
+	service.urls = urls;
+	refreshCommandCatalog(service);
+}
+
+function canonicalHeader(name: string): string {
+	return name
+		.trim()
+		.split('-')
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+		.join('-');
+}
+
+async function handleSetServiceHeader(
+	serviceName: string,
+	name: string,
+	body: unknown
+): Promise<void> {
+	await delay(300);
+	const service = httpServiceOrThrow(serviceName);
+	const template =
+		typeof (body as { template?: unknown })?.template === 'string'
+			? (body as { template: string }).template
+			: '';
+	if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) {
+		throw new ApiError(`invalid header name "${name}": use a valid HTTP token`, 400);
+	}
+	if (/\{\{(?!env\.)/.test(template)) {
+		throw new ApiError('service headers can only use {{env.NAME}}', 400);
+	}
+	service.headers = { ...(service.headers ?? {}), [canonicalHeader(name)]: template };
+}
+
+async function handleRemoveServiceHeader(serviceName: string, name: string): Promise<void> {
+	await delay(300);
+	const service = httpServiceOrThrow(serviceName);
+	const key = canonicalHeader(name);
+	const headers = { ...(service.headers ?? {}) };
+	if (!(key in headers))
+		throw new ApiError(`header ${key} does not exist in service ${serviceName}`, 404);
+	delete headers[key];
+	service.headers = headers;
+}
+
+function accountOrThrow(serviceName: string, accountName: string): AccountView {
+	const service = findService(serviceName);
+	const account = service ? findAccount(service, accountName) : undefined;
+	if (!account) throw new ApiError(`unknown account "${serviceName}/${accountName}"`, 404);
+	return account;
+}
+
+async function handleSetAccountEnv(
+	serviceName: string,
+	accountName: string,
+	name: string,
+	body: unknown
+): Promise<void> {
+	await delay(300);
+	const account = accountOrThrow(serviceName, accountName);
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+		throw new ApiError(
+			`invalid environment name "${name}": use letters, digits and underscores, starting with a letter or underscore`,
+			400
+		);
+	}
+	if (account.secret_env?.includes(name)) {
+		throw new ApiError(
+			`${name} is a secret of ${serviceName}/${accountName}: change it with pandora remove and add`,
+			400
+		);
+	}
+	const value =
+		typeof (body as { value?: unknown })?.value === 'string'
+			? (body as { value: string }).value
+			: '';
+	account.env = { ...(account.env ?? {}), [name]: value };
+}
+
+async function handleUnsetAccountEnv(
+	serviceName: string,
+	accountName: string,
+	name: string
+): Promise<void> {
+	await delay(300);
+	const account = accountOrThrow(serviceName, accountName);
+	const env = { ...(account.env ?? {}) };
+	if (!(name in env))
+		throw new ApiError(`${name} is not set for ${serviceName}/${accountName}`, 404);
+	delete env[name];
+	account.env = env;
+}
+
 function initialTools(kind: ServiceKind): ToolInfo[] {
-	if (kind === 'command') return [];
+	if (kind === 'command' || kind === 'http') return [];
 	if (kind === 'openapi') {
 		return [makeTool('get_items', 'List items from the API.', {}, [], { readOnlyHint: true })];
 	}
@@ -1030,9 +1217,11 @@ async function handleAddAccount(body: unknown): Promise<unknown> {
 			url: input.url?.trim() || undefined,
 			command: kind === 'mcp-stdio' ? input.command : undefined,
 			spec: kind === 'openapi' ? input.spec?.trim() || undefined : undefined,
+			urls: kind === 'http' ? normalizedUrls(input.urls) : undefined,
+			headers: kind === 'http' ? {} : undefined,
 			tools_known: kind !== 'command',
 			tool_count: tools.length,
-			command_tools: kind === 'command' ? [] : undefined,
+			command_tools: kind === 'command' || kind === 'http' ? [] : undefined,
 			accounts: []
 		};
 		services.push(service);
@@ -1040,6 +1229,7 @@ async function handleAddAccount(body: unknown): Promise<unknown> {
 			fetched_at: new Date().toISOString(),
 			tools
 		});
+		if (kind === 'http') refreshCommandCatalog(service);
 	} else if (!service) {
 		throw new ApiError(`Service ${serviceName} does not exist.`, 404);
 	}
@@ -1055,7 +1245,10 @@ async function handleAddAccount(body: unknown): Promise<unknown> {
 		default: isFirstAccount,
 		readonly: false,
 		allow: [],
-		deny: []
+		deny: [],
+		env: { ...(input.env ?? {}) },
+		secret_env: Object.keys(input.secret_env ?? {}).sort(),
+		secret_headers: Object.keys(input.secret_headers ?? {}).sort()
 	};
 
 	service.accounts.push(account);
@@ -1068,8 +1261,8 @@ async function handleAddAccount(body: unknown): Promise<unknown> {
 		ref: status.ref,
 		status,
 		warning:
-			service.kind === 'command'
-				? 'Tools for a command service are added after it is created.'
+			service.kind === 'command' || service.kind === 'http'
+				? 'Tools for this service are added after it is created.'
 				: undefined
 	};
 }
@@ -1452,6 +1645,19 @@ function toolContent(tool: ToolInfo, args: Record<string, JsonValue>): ToolConte
 					text: `Deployed to ${argText(args.environment, 'production')}.`
 				}
 			];
+		case 'list-orders':
+			return [
+				{
+					type: 'text',
+					text: JSON.stringify({
+						data: [
+							{ id: 'ord_1042', status: 'paid', total: 129.9, customer: { name: 'Ana Souza' } },
+							{ id: 'ord_1041', status: 'shipped', total: 54.5, customer: { name: 'Bruno Lima' } }
+						],
+						has_more: false
+					})
+				}
+			];
 		default:
 			return [{ type: 'text', text: `Called ${tool.name}.` }];
 	}
@@ -1610,8 +1816,27 @@ async function handleDoctor(offline: boolean): Promise<DoctorCheck[]> {
 	return doctorChecks(offline);
 }
 
+function httpGetTool(service: ServiceView): ToolInfo {
+	const names = Object.keys(service.urls ?? {}).sort();
+	const list = names.map((name) => `${name} (${service.urls?.[name]})`).join(', ');
+	return makeTool(
+		'http_get',
+		`Read-only GET request to this service's API, to explore it before adding a tool with pandora tool add --http. URLs: ${list}`,
+		{
+			path: { type: 'string', description: 'Path after the base URL, starting with /' },
+			url: { type: 'string', enum: names, description: 'Name of the base URL to call' },
+			query: { type: 'object', description: 'Query parameters as name to value' }
+		},
+		names.length > 1 ? ['path', 'url'] : ['path'],
+		{ readOnlyHint: true }
+	);
+}
+
 function refreshCommandCatalog(service: ServiceView): void {
 	const tools = (service.command_tools ?? []).map(commandToolInfo);
+	if (service.kind === 'http' && Object.keys(service.urls ?? {}).length > 0) {
+		tools.push(httpGetTool(service));
+	}
 	tools.sort((a, b) => a.name.localeCompare(b.name));
 	const existing = catalogs.get(service.name);
 	const catalog: ToolCatalog = {
@@ -1634,15 +1859,56 @@ async function handleAddCommandTool(serviceName: string, body: unknown): Promise
 	const input = (body ?? {}) as CommandToolInput;
 	const name = typeof input.name === 'string' ? input.name.trim() : '';
 	const command = Array.isArray(input.command) ? input.command : [];
+	const http = input.http;
 
 	if (!name) throw new ApiError('Tool name is required.', 400);
-	if (command.length === 0) throw new ApiError('Command is required.', 400);
+	if (command.length > 0 && http) {
+		throw new ApiError(`tool "${name}": use a command or an HTTP request, not both`, 400);
+	}
+	if (command.length === 0 && !http) {
+		throw new ApiError(`tool "${name}" needs a command or an HTTP request`, 400);
+	}
 
 	await delay(400);
 	const service = findService(serviceName);
 	if (!service) throw new ApiError(`Service ${serviceName} does not exist.`, 404);
-	if (service.kind !== 'command') {
-		throw new ApiError('Command tools can only be added to command services.', 400);
+	if (http && service.kind !== 'http') {
+		throw new ApiError(
+			`service ${serviceName} has no URL: add one with pandora http url ${serviceName} <name> <url>`,
+			400
+		);
+	}
+	if (!http && service.kind !== 'command' && service.kind !== 'http') {
+		throw new ApiError(`service "${serviceName}" is not a command or HTTP service`, 400);
+	}
+	if (http) {
+		const urlNames = Object.keys(service.urls ?? {});
+		if (!http.url && urlNames.length === 1) http.url = urlNames[0];
+		if (!http.url) throw new ApiError('the service has several URLs: choose one with --url', 400);
+		if (!urlNames.includes(http.url)) {
+			throw new ApiError(`unknown URL "${http.url}": add it with pandora http url`, 400);
+		}
+		if (!http.path?.startsWith('/'))
+			throw new ApiError(`tool ${name}: path must start with /`, 400);
+		http.method = http.method.toUpperCase() as typeof http.method;
+		if ((http.method === 'GET' || http.method === 'HEAD') && (http.form || http.json)) {
+			throw new ApiError(`tool ${name}: ${http.method} cannot have a form or JSON body`, 400);
+		}
+		for (const secret of service.accounts.flatMap((account) => account.secret_env ?? [])) {
+			const used = [
+				http.path,
+				...Object.values(http.query ?? {}),
+				...Object.values(http.form ?? {}),
+				...Object.values(http.json ?? {}),
+				...Object.values(http.headers ?? {})
+			].some((value) => value.includes(`{{env.${secret}}}`));
+			if (used) {
+				throw new ApiError(
+					`tool ${name}: the secret ${secret} can only be used in the service headers`,
+					400
+				);
+			}
+		}
 	}
 
 	service.command_tools = service.command_tools ?? [];
@@ -1654,9 +1920,10 @@ async function handleAddCommandTool(serviceName: string, body: unknown): Promise
 	const tool: CommandToolView = {
 		name,
 		description: input.description?.trim() || undefined,
-		command,
+		command: http ? undefined : command,
+		http,
 		params: input.params,
-		readonly: Boolean(input.readonly),
+		readonly: Boolean(input.readonly) || http?.method === 'GET' || http?.method === 'HEAD',
 		timeout_sec: timeout
 	};
 	service.command_tools.push(tool);
@@ -1667,8 +1934,8 @@ async function handleRemoveCommandTool(serviceName: string, name: string): Promi
 	await delay(400);
 	const service = findService(serviceName);
 	if (!service) throw new ApiError(`Service ${serviceName} does not exist.`, 404);
-	if (service.kind !== 'command') {
-		throw new ApiError('Command tools can only be removed from command services.', 400);
+	if (service.kind !== 'command' && service.kind !== 'http') {
+		throw new ApiError('Tools can only be removed from command or HTTP services.', 400);
 	}
 
 	const existing = service.command_tools ?? [];
@@ -1830,6 +2097,16 @@ export async function mockRequest(
 			await handleLogout(serviceName, accountName);
 			return undefined;
 		}
+		if (segments[4] === 'env' && segments[5]) {
+			if (method === 'PUT') {
+				await handleSetAccountEnv(serviceName, accountName, segments[5], body);
+				return undefined;
+			}
+			if (method === 'DELETE') {
+				await handleUnsetAccountEnv(serviceName, accountName, segments[5]);
+				return undefined;
+			}
+		}
 	}
 
 	if (segments[0] === 'api' && segments[1] === 'services' && segments.length >= 3) {
@@ -1845,6 +2122,26 @@ export async function mockRequest(
 		if (method === 'DELETE' && segments[3] === 'command-tools' && segments[4]) {
 			await handleRemoveCommandTool(serviceName, segments[4]);
 			return undefined;
+		}
+		if (segments[3] === 'urls' && segments[4]) {
+			if (method === 'PUT') {
+				await handleSetServiceUrl(serviceName, segments[4], body);
+				return undefined;
+			}
+			if (method === 'DELETE') {
+				await handleRemoveServiceUrl(serviceName, segments[4]);
+				return undefined;
+			}
+		}
+		if (segments[3] === 'headers' && segments[4]) {
+			if (method === 'PUT') {
+				await handleSetServiceHeader(serviceName, segments[4], body);
+				return undefined;
+			}
+			if (method === 'DELETE') {
+				await handleRemoveServiceHeader(serviceName, segments[4]);
+				return undefined;
+			}
 		}
 		if (method === 'DELETE' && segments.length === 3) {
 			await handleDeleteService(serviceName);

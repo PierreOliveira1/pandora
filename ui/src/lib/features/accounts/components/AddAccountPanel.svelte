@@ -2,7 +2,7 @@
 	import { tick, untrack } from 'svelte';
 	import { errorMessage } from '#lib/shared/api/client.ts';
 	import { Button, Field, Icon, Panel, fieldClasses, selectClasses } from '#lib/shared/ui/index.ts';
-	import { addAccount, loadStatus, startLogin, waitForLogin } from '../api.ts';
+	import { addAccount, loadStatus, setServiceHeader, startLogin, waitForLogin } from '../api.ts';
 	import { parseCommandLine } from '../parse-command.ts';
 	import { validateName, validateSpec, validateUrl } from '../schemas.ts';
 	import { suggestServiceName } from '../suggest-name.ts';
@@ -19,6 +19,8 @@
 	type SignInMode = 'auto' | 'oauth' | 'header';
 	type HeaderRow = { id: number; name: string; value: string };
 	type EnvRow = { id: number; key: string; value: string; secret: boolean };
+	type HTTPURLRow = { id: number; name: string; url: string };
+	type ServiceHeaderRow = { id: number; name: string; template: string };
 
 	const kindOptions: Array<{ kind: ServiceKind; title: string; description: string }> = [
 		{
@@ -35,6 +37,11 @@
 			kind: 'openapi',
 			title: 'OpenAPI',
 			description: 'Any HTTP API described by an OpenAPI or Swagger spec'
+		},
+		{
+			kind: 'http',
+			title: 'HTTP API',
+			description: 'An HTTP API without a spec; each request becomes a tool'
 		},
 		{
 			kind: 'command',
@@ -69,6 +76,8 @@
 	let clientSecret = $state('');
 	let headerRows = $state<HeaderRow[]>([{ id: 1, name: '', value: '' }]);
 	let envRows = $state<EnvRow[]>([]);
+	let httpRows = $state<HTTPURLRow[]>([{ id: 1, name: 'api', url: '' }]);
+	let serviceHeaderRows = $state<ServiceHeaderRow[]>([{ id: 1, name: '', template: '' }]);
 	let errors = $state<Record<string, string>>({});
 	let apiError = $state('');
 	let submitting = $state(false);
@@ -83,6 +92,8 @@
 
 	const selectedService = $derived(services.find((service) => service.name === existingService));
 	const parsedCommand = $derived(parseCommandLine(command));
+	const firstHTTPUrl = $derived(httpRows[0]?.url ?? '');
+	const isHTTP = $derived(mode === 'new' ? kind === 'http' : selectedService?.kind === 'http');
 	const showHeaders = $derived(
 		mode === 'new'
 			? (kind === 'mcp-http' && signIn === 'header') || kind === 'openapi'
@@ -93,7 +104,9 @@
 				)
 	);
 	const showEnv = $derived(
-		mode === 'new' ? kind === 'mcp-stdio' : selectedService?.kind === 'mcp-stdio'
+		mode === 'new'
+			? kind === 'mcp-stdio' || kind === 'http'
+			: selectedService?.kind === 'mcp-stdio' || selectedService?.kind === 'http'
 	);
 	const showOAuthFields = $derived(mode === 'new' && kind === 'mcp-http' && signIn === 'oauth');
 	const needsHeaderCredentials = $derived(
@@ -110,7 +123,13 @@
 	$effect(() => {
 		if (mode !== 'new' || serviceNameTouched) return;
 
-		const suggestion = suggestServiceName({ kind, url, spec, apiBaseUrl, command });
+		const suggestion = suggestServiceName({
+			kind,
+			url: kind === 'http' ? firstHTTPUrl : url,
+			spec,
+			apiBaseUrl,
+			command
+		});
 		if (suggestion !== serviceName) serviceName = suggestion;
 	});
 
@@ -148,8 +167,59 @@
 		envRows = envRows.filter((row) => row.id !== id);
 	}
 
+	function addHTTPUrl(): void {
+		rowSequence += 1;
+		httpRows.push({ id: rowSequence, name: '', url: '' });
+	}
+
+	function removeHTTPUrl(id: number): void {
+		httpRows = httpRows.filter((row) => row.id !== id);
+	}
+
+	function addServiceHeader(): void {
+		rowSequence += 1;
+		serviceHeaderRows.push({ id: rowSequence, name: '', template: '' });
+	}
+
+	function removeServiceHeader(id: number): void {
+		serviceHeaderRows = serviceHeaderRows.filter((row) => row.id !== id);
+	}
+
 	function toggleSecret(row: EnvRow): void {
 		row.secret = !row.secret;
+	}
+
+	function httpURLsPayload(): Record<string, string> {
+		const urls: Record<string, string> = {};
+
+		for (const row of httpRows) {
+			const name = row.name.trim();
+			if (!name) continue;
+			urls[name] = row.url.trim();
+		}
+
+		return urls;
+	}
+
+	function validateHTTPBaseUrl(value: string): string | null {
+		const raw = value.trim();
+		if (!raw) return 'Enter a URL.';
+
+		let parsed: URL;
+		try {
+			parsed = new URL(raw);
+		} catch {
+			return 'Enter a valid URL, like https://api.example.com/v1.';
+		}
+
+		if (parsed.search) return 'Remove the query from the URL.';
+		if (parsed.hash) return 'Remove the # from the URL.';
+		if (parsed.protocol === 'https:') return null;
+		if (parsed.protocol !== 'http:') return 'Use https; http works only for localhost.';
+
+		const host = parsed.hostname.toLowerCase();
+		if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') return null;
+		return 'Use https for this URL; http works only for localhost.';
 	}
 
 	function headersPayload(): Record<string, string> {
@@ -223,6 +293,31 @@
 			}
 		}
 
+		if (mode === 'new' && kind === 'http') {
+			if (httpRows.length === 0) {
+				next.httpUrls = 'Add at least one URL.';
+			} else {
+				const names = new Set<string>();
+				let urlError = '';
+
+				for (const row of httpRows) {
+					const name = row.name.trim();
+					const nameError = validateName(name);
+					if (nameError) {
+						urlError ||= nameError;
+					} else if (names.has(name)) {
+						urlError ||= 'Use a unique name for each URL.';
+					}
+					names.add(name);
+
+					const baseError = validateHTTPBaseUrl(row.url);
+					if (baseError) urlError ||= baseError;
+				}
+
+				if (urlError) next.httpUrls = urlError;
+			}
+		}
+
 		if (showHeaders) {
 			const rows = headerRows.map((row) => ({ name: row.name.trim(), value: row.value.trim() }));
 			const incomplete = rows.some((row) => (row.name && !row.value) || (!row.name && row.value));
@@ -289,6 +384,11 @@
 			Object.assign(payload, envPayload());
 		}
 
+		if (kind === 'http') {
+			payload.urls = httpURLsPayload();
+			Object.assign(payload, envPayload());
+		}
+
 		return payload;
 	}
 
@@ -311,9 +411,28 @@
 
 		try {
 			const response = await addAccount(buildInput(service, account));
+			const warnings: string[] = [];
+
+			if (response.warning) warnings.push(response.warning);
+
+			if (mode === 'new' && kind === 'http') {
+				for (const row of serviceHeaderRows) {
+					const name = row.name.trim();
+					const template = row.template.trim();
+					if (!name && !template) continue;
+
+					try {
+						await setServiceHeader(service, name, template);
+					} catch (cause) {
+						const label = name ? `header ${name}` : 'a service header';
+						warnings.push(`Could not add ${label}: ${errorMessage(cause)}`);
+					}
+				}
+			}
+
 			createdService = service;
 			createdAccount = account;
-			result = response;
+			result = { ...response, warning: warnings.length > 0 ? warnings.join(' ') : undefined };
 			refreshedStatus = null;
 			loginError = '';
 		} catch (cause) {
@@ -590,6 +709,59 @@
 					</div>
 				{/if}
 
+				{#if mode === 'new' && kind === 'http'}
+					<div>
+						<div class="flex items-center justify-between gap-3">
+							<p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Base URLs</p>
+						</div>
+
+						<div class="mt-2 space-y-2">
+							{#each httpRows as row (row.id)}
+								<div
+									class="grid grid-cols-[minmax(0,1fr)_44px] gap-2 sm:grid-cols-[8rem_minmax(0,1fr)_44px]"
+								>
+									<input
+										bind:value={row.name}
+										type="text"
+										class={`${fieldClasses} col-span-2 sm:col-span-1`}
+										placeholder="name"
+										aria-label="URL name"
+										autocomplete="off"
+										spellcheck="false"
+									/>
+									<input
+										bind:value={row.url}
+										type="url"
+										class={fieldClasses}
+										placeholder="https://api.example.com/v1"
+										aria-label="Base URL"
+										autocomplete="off"
+										spellcheck="false"
+									/>
+									<button
+										type="button"
+										class="inline-flex size-11 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+										aria-label={`Remove URL ${row.name || 'row'}`}
+										onclick={() => removeHTTPUrl(row.id)}
+									>
+										<Icon name="x" class="size-5" />
+									</button>
+								</div>
+							{/each}
+						</div>
+
+						<Button variant="secondary" icon="plus" class="mt-2 px-3" onclick={addHTTPUrl}>
+							Add URL
+						</Button>
+						<p class="mt-1.5 text-xs text-zinc-500">
+							Each tool picks one of these by name. Use https; http works only for localhost.
+						</p>
+						{#if errors.httpUrls}
+							<p class="mt-1.5 text-xs text-red-600 dark:text-red-400">{errors.httpUrls}</p>
+						{/if}
+					</div>
+				{/if}
+
 				{#if mode === 'new' && kind === 'mcp-stdio'}
 					<div>
 						<Field
@@ -655,11 +827,13 @@
 
 						<div class="mt-2 space-y-2">
 							{#each headerRows as row (row.id)}
-								<div class="grid gap-2 sm:grid-cols-[1fr_1fr_44px]">
+								<div
+									class="grid grid-cols-[minmax(0,1fr)_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px]"
+								>
 									<input
 										bind:value={row.name}
 										type="text"
-										class={fieldClasses}
+										class={`${fieldClasses} col-span-2 sm:col-span-1`}
 										placeholder="Authorization"
 										aria-label="Header name"
 										autocomplete="off"
@@ -695,26 +869,37 @@
 					<div>
 						<div class="flex items-center justify-between gap-3">
 							<p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-								Environment variables
+								{isHTTP ? 'Account values' : 'Environment variables'}
 							</p>
 							<Button variant="secondary" icon="plus" class="px-3" onclick={addEnvironmentVariable}>
-								Add variable
+								{isHTTP ? 'Add value' : 'Add variable'}
 							</Button>
 						</div>
 
+						{#if isHTTP}
+							<p class="mt-1 text-xs text-zinc-500">
+								Ids and other values go here. Mark tokens as secret: they are stored in the system
+								keychain, never in the config.
+							</p>
+						{/if}
+
 						{#if envRows.length === 0}
-							<p class="mt-2 text-sm text-zinc-500">No environment variables yet.</p>
+							<p class="mt-2 text-sm text-zinc-500">
+								{isHTTP ? 'No values yet.' : 'No environment variables yet.'}
+							</p>
 						{/if}
 
 						<div class="mt-2 space-y-2">
 							{#each envRows as row (row.id)}
 								<div class="rounded-lg border border-zinc-200 p-2 dark:border-zinc-700">
-									<div class="grid gap-2 sm:grid-cols-[1fr_1fr_44px]">
+									<div
+										class="grid grid-cols-[minmax(0,1fr)_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px]"
+									>
 										<input
 											bind:value={row.key}
 											type="text"
-											class={fieldClasses}
-											placeholder="GITHUB_TOKEN"
+											class={`${fieldClasses} col-span-2 sm:col-span-1`}
+											placeholder={isHTTP ? 'STORE_ID' : 'GITHUB_TOKEN'}
 											aria-label="Variable name"
 											autocomplete="off"
 											spellcheck="false"
@@ -771,6 +956,63 @@
 						{#if errors.env}
 							<p class="mt-1.5 text-xs text-red-600 dark:text-red-400">{errors.env}</p>
 						{/if}
+					</div>
+				{/if}
+
+				{#if mode === 'new' && kind === 'http'}
+					<div>
+						<div class="flex items-center justify-between gap-3">
+							<p class="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+								Service headers (optional)
+							</p>
+							<Button variant="secondary" icon="plus" class="px-3" onclick={addServiceHeader}>
+								Add header
+							</Button>
+						</div>
+
+						{#if serviceHeaderRows.length === 0}
+							<p class="mt-2 text-sm text-zinc-500">No service headers yet.</p>
+						{/if}
+
+						<div class="mt-2 space-y-2">
+							{#each serviceHeaderRows as row (row.id)}
+								<div
+									class="grid grid-cols-[minmax(0,1fr)_44px] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_44px]"
+								>
+									<input
+										bind:value={row.name}
+										type="text"
+										class={`${fieldClasses} col-span-2 sm:col-span-1`}
+										placeholder="Authorization"
+										aria-label="Service header name"
+										autocomplete="off"
+										spellcheck="false"
+									/>
+									<input
+										bind:value={row.template}
+										type="text"
+										class={fieldClasses}
+										placeholder={'Bearer {{env.API_TOKEN}}'}
+										aria-label="Service header template"
+										autocomplete="off"
+										spellcheck="false"
+									/>
+									<button
+										type="button"
+										class="inline-flex size-11 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+										aria-label="Remove service header"
+										onclick={() => removeServiceHeader(row.id)}
+									>
+										<Icon name="x" class="size-5" />
+									</button>
+								</div>
+							{/each}
+						</div>
+
+						<p class="mt-1.5 text-xs text-zinc-500">
+							Sent with every request. Use <code class="font-mono">{'{{env.NAME}}'}</code> to insert an
+							account value; the config keeps only the template.
+						</p>
 					</div>
 				{/if}
 

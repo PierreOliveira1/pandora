@@ -68,7 +68,9 @@ export function suggestNameFromCommand(value: string): string {
 }
 
 export function suggestServiceName(source: ServiceNameSource): string {
-	if (source.kind === 'mcp-http') return suggestNameFromUrl(source.url ?? '');
+	if (source.kind === 'mcp-http' || source.kind === 'http') {
+		return suggestNameFromUrl(source.url ?? '');
+	}
 
 	if (source.kind === 'openapi') {
 		return suggestNameFromUrl(source.spec ?? '') || suggestNameFromUrl(source.apiBaseUrl ?? '');

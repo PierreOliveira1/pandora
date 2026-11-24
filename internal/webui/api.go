@@ -35,6 +35,7 @@ type addAccountRequest struct {
 	Env                map[string]string `json:"env"`
 	SecretEnv          map[string]string `json:"secret_env"`
 	SecretHeaders      map[string]string `json:"secret_headers"`
+	URLs               map[string]string `json:"urls"`
 }
 
 type nameRequest struct {
@@ -68,9 +69,22 @@ type commandToolRequest struct {
 	Name        string                         `json:"name"`
 	Description string                         `json:"description"`
 	Command     []string                       `json:"command"`
+	HTTP        *config.HTTPRequest            `json:"http"`
 	Params      map[string]config.CommandParam `json:"params"`
 	ReadOnly    bool                           `json:"readonly"`
 	TimeoutSec  int                            `json:"timeout_sec"`
+}
+
+type urlRequest struct {
+	URL string `json:"url"`
+}
+
+type headerRequest struct {
+	Template string `json:"template"`
+}
+
+type envRequest struct {
+	Value string `json:"value"`
 }
 
 type installRequest struct {
@@ -90,6 +104,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/accounts/{service}/{account}", s.handleRemoveAccount)
 	mux.HandleFunc("DELETE /api/services/{service}", s.handleRemoveService)
 	mux.HandleFunc("POST /api/accounts/{service}/{account}/rename", s.handleRenameAccount)
+	mux.HandleFunc("PUT /api/accounts/{service}/{account}/env/{name}", s.handleSetAccountEnv)
+	mux.HandleFunc("DELETE /api/accounts/{service}/{account}/env/{name}", s.handleUnsetAccountEnv)
 	mux.HandleFunc("POST /api/services/{service}/rename", s.handleRenameService)
 	mux.HandleFunc("POST /api/accounts/{service}/{account}/default", s.handleDefault)
 	mux.HandleFunc("PUT /api/descriptions", s.handleDescription)
@@ -107,6 +123,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/integrations/{client}", s.handleUninstall)
 	mux.HandleFunc("POST /api/services/{service}/command-tools", s.handleAddCommandTool)
 	mux.HandleFunc("DELETE /api/services/{service}/command-tools/{name}", s.handleRemoveCommandTool)
+	mux.HandleFunc("PUT /api/services/{service}/urls/{name}", s.handleSetServiceURL)
+	mux.HandleFunc("DELETE /api/services/{service}/urls/{name}", s.handleRemoveServiceURL)
+	mux.HandleFunc("PUT /api/services/{service}/headers/{name}", s.handleSetServiceHeader)
+	mux.HandleFunc("DELETE /api/services/{service}/headers/{name}", s.handleRemoveServiceHeader)
 	mux.HandleFunc("GET /api/webhooks", s.handleWebhooks)
 	mux.HandleFunc("DELETE /api/accounts/{service}/{account}/webhook", s.handleRemoveWebhook)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
@@ -162,6 +182,7 @@ func (s *Server) handleAddAccount(w http.ResponseWriter, r *http.Request) {
 		Env:                request.Env,
 		SecretEnv:          request.SecretEnv,
 		SecretHeaders:      request.SecretHeaders,
+		URLs:               request.URLs,
 	})
 	if err != nil {
 		writeError(w, statusForError(err), err.Error())
@@ -425,6 +446,7 @@ func (s *Server) handleAddCommandTool(w http.ResponseWriter, r *http.Request) {
 		Name:        request.Name,
 		Description: request.Description,
 		Command:     request.Command,
+		HTTP:        request.HTTP,
 		Params:      request.Params,
 		ReadOnly:    request.ReadOnly,
 		TimeoutSec:  request.TimeoutSec,
@@ -442,6 +464,68 @@ func (s *Server) handleRemoveCommandTool(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeChange(w, http.StatusOK, map[string]any{"ok": true}, s.syncWarning(r.Context()))
+}
+
+func (s *Server) handleSetServiceURL(w http.ResponseWriter, r *http.Request) {
+	var request urlRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.registry.SetServiceURL(r.PathValue("service"), r.PathValue("name"), request.URL); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeChange(w, http.StatusOK, map[string]any{"ok": true}, s.syncWarning(r.Context()))
+}
+
+func (s *Server) handleRemoveServiceURL(w http.ResponseWriter, r *http.Request) {
+	if err := s.registry.RemoveServiceURL(r.PathValue("service"), r.PathValue("name")); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeChange(w, http.StatusOK, map[string]any{"ok": true}, s.syncWarning(r.Context()))
+}
+
+func (s *Server) handleSetServiceHeader(w http.ResponseWriter, r *http.Request) {
+	var request headerRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := s.registry.SetServiceHeader(r.PathValue("service"), r.PathValue("name"), request.Template); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleRemoveServiceHeader(w http.ResponseWriter, r *http.Request) {
+	if err := s.registry.RemoveServiceHeader(r.PathValue("service"), r.PathValue("name")); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleSetAccountEnv(w http.ResponseWriter, r *http.Request) {
+	var request envRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	ref := registry.Ref{Service: r.PathValue("service"), Account: r.PathValue("account")}
+	if err := s.registry.SetAccountEnv(ref, r.PathValue("name"), request.Value); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleUnsetAccountEnv(w http.ResponseWriter, r *http.Request) {
+	ref := registry.Ref{Service: r.PathValue("service"), Account: r.PathValue("account")}
+	if err := s.registry.UnsetAccountEnv(ref, r.PathValue("name")); err != nil {
+		writeError(w, statusForError(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) staticHandler() http.Handler {
@@ -554,6 +638,17 @@ func statusForError(err error) int {
 		strings.Contains(text, "is required"),
 		strings.Contains(text, "has no default account"),
 		strings.Contains(text, "is not a command service"),
+		strings.Contains(text, "is not an http service"),
+		strings.Contains(text, "is a secret"),
+		strings.Contains(text, "remove the tool first"),
+		strings.Contains(text, "can only use"),
+		strings.Contains(text, "can only be used"),
+		strings.Contains(text, "has no url"),
+		strings.Contains(text, "unknown url"),
+		strings.Contains(text, "several urls"),
+		strings.Contains(text, "not both"),
+		strings.Contains(text, "path must"),
+		strings.Contains(text, "method must"),
 		strings.Contains(text, "unsupported"),
 		strings.Contains(text, "no ai clients"):
 		return http.StatusBadRequest
