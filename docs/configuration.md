@@ -35,7 +35,7 @@ The home directory comes from `HOME`; when it is empty, Pandora asks the operati
 | `state/logs/<service>__<account>.log` | stderr of a local MCP server. |
 | `state/events/` | Webhook event queue. See [Webhooks](webhooks.md). |
 | `state/locks/<service>__<account>.lock` | Lock used while refreshing an OAuth token. |
-| `state/pandora.sock` | Daemon socket. If the path is too long for a Unix socket, it goes under the system temp directory. |
+| `state/pandora.sock` | Daemon socket. If the path is too long for a Unix socket, it goes under the system temp directory, with a name made from the state directory so each Pandora home keeps its own daemon. |
 
 ## config.toml
 

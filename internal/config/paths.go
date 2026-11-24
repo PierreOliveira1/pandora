@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,7 +75,8 @@ func (p Paths) DaemonSocket() string {
 	if len(path) <= 100 {
 		return path
 	}
-	return filepath.Join(os.TempDir(), fmt.Sprintf("pandora-%d", os.Getuid()), "pandora.sock")
+	sum := sha256.Sum256([]byte(p.StateDir))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("pandora-%d", os.Getuid()), hex.EncodeToString(sum[:8])+".sock")
 }
 
 func (p Paths) DaemonLog() string {
