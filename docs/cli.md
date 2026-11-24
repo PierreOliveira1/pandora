@@ -944,6 +944,33 @@ pandora uninstall
 pandora uninstall cursor claude-code
 ```
 
+## pandora upgrade
+
+Upgrade pandora to the latest release.
+
+```
+pandora upgrade [flags]
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--check` | Only tell whether a newer release exists. |
+| `--version string` | Install this version, even when it is older. |
+
+```sh
+pandora upgrade
+```
+
+```sh
+pandora upgrade --check
+```
+
+```sh
+pandora upgrade --version 0.3.0
+```
+
+It downloads the build for your system from the GitHub releases, checks it against `checksums.txt` and replaces the running binary in place. Then it regenerates the skill in your AI clients and restarts the daemon if it was running. The directory of the binary must be writable. A binary built from source has no release version: reinstall it, or pass `--version`.
+
 ## pandora webhook
 
 Manage incoming webhooks.

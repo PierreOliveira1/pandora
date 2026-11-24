@@ -48,6 +48,12 @@ Check the version:
 pandora --version
 ```
 
+Upgrade to the latest release:
+
+```sh
+pandora upgrade
+```
+
 ## Quick start
 
 1. Add a remote MCP server that uses OAuth. Run this in a terminal so Pandora can start the login:

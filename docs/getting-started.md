@@ -33,6 +33,8 @@ Check the installation:
 pandora --version
 ```
 
+Upgrade later with `pandora upgrade`. It checks the download, replaces the binary and updates the skill in your AI clients.
+
 ## Add your first account
 
 A remote MCP server that uses OAuth needs only its URL. Todoist is a good first example. Run it in a terminal so Pandora can open the login page:

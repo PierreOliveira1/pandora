@@ -170,6 +170,7 @@ func newRoot(d deps) *cobra.Command {
 		newInstall(d),
 		newUninstall(d),
 		newSync(d),
+		newUpgrade(d),
 		newDoctor(d),
 		newDaemon(d),
 		newServe(d),
